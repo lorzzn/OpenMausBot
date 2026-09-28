@@ -384,6 +384,7 @@ import {
   resolveComputerPromptKind,
 } from "./system-prompt.ts";
 import { readCuaConnection, readCuaUnavailableReason, gatedLocalComputer } from "./local-computer.ts";
+import { localVmViewerTarget, proxiedLocalVmViewerUrl } from "./local-vm-viewer.ts";
 import {
   discoverExistingPerBotLocalVms,
   localVmInventoryEntry,
@@ -12488,10 +12489,23 @@ function stderrOf(err: unknown): string {
   return typeof s === "string" ? s : Buffer.isBuffer(s) ? s.toString("utf8") : "";
 }
 
-async function localVmPayload(target: LocalVmTarget) {
-  const status = await containerComputerStatus(undefined, undefined, target);
+function localVmStatusForRequest(
+  status: Awaited<ReturnType<typeof containerComputerStatus>>,
+  req: IncomingMessage,
+  botId?: string,
+) {
+  if (process.env.OMB_LOCAL_VM_VIEWER_PROXY !== "1" || !isProxied(req) || !status.viewer_url) return status;
+  const origin = requestOrigin(req);
   return {
     ...status,
+    viewer_url: origin ? proxiedLocalVmViewerUrl(status.viewer_url, origin, botId) ?? "" : "",
+  };
+}
+
+async function localVmPayload(target: LocalVmTarget, req: IncomingMessage, botId?: string) {
+  const status = await containerComputerStatus(undefined, undefined, target);
+  return {
+    ...localVmStatusForRequest(status, req, botId),
     commands: setupCommands(status.runtime, process.platform, target),
     idle_timeout_ms: LOCAL_VM_IDLE_MS,
     mode: localVmMode(cfg),
@@ -19842,7 +19856,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // what the user's machine can host: which runtime is installed, whether
     // its daemon is up, and whether the desktop image and container exist
     if (method === "GET" && path === "/api/local-computer") {
-      return json(res, 200, await localVmPayload(SHARED_LOCAL_VM_TARGET));
+      return json(res, 200, await localVmPayload(SHARED_LOCAL_VM_TARGET, req));
+    }
+    // Caddy asks on every noVNC asset and WebSocket handshake. It then uses
+    // only this server-verified port, never a port supplied by the browser.
+    if (method === "GET" && path === "/api/local-computer/viewer-authorize" && process.env.OMB_LOCAL_VM_VIEWER_PROXY === "1") {
+      const selected = localVmViewerTarget(req.headers["x-forwarded-uri"]);
+      if (!selected || !isProxied(req)) return json(res, 404, { error: "no such viewer" });
+      if (selected.botId && (localVmMode(cfg) !== "per-bot" || !store.bot(selected.botId) || !visible.bot(selected.botId))) {
+        return json(res, 404, { error: "no such viewer" });
+      }
+      const target = selected.botId ? perBotLocalVmTarget(selected.botId) : SHARED_LOCAL_VM_TARGET;
+      const status = await containerComputerStatus(undefined, undefined, target);
+      const port = status.viewer_port;
+      if (!status.ready || typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
+        return json(res, 404, { error: "viewer unavailable" });
+      }
+      res.setHeader("cache-control", "private, no-store");
+      res.setHeader("x-openmausbot-viewer-port", String(port));
+      return json(res, 200, { ok: true });
     }
     if (method === "GET" && path === "/api/local-computer/instances") {
       res.setHeader("cache-control", "private, no-store");
@@ -19881,7 +19913,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (action === "run" || action === "start") localVmIdleFor(SHARED_LOCAL_VM_TARGET).touch();
         if (action === "stop" || action === "remove") localVmIdleFor(SHARED_LOCAL_VM_TARGET).cancel();
         return json(res, 200, {
-          ...status,
+          ...localVmStatusForRequest(status, req),
           commands: setupCommands(status.runtime, process.platform, SHARED_LOCAL_VM_TARGET),
           idle_timeout_ms: LOCAL_VM_IDLE_MS,
           mode: localVmMode(cfg),
@@ -19904,7 +19936,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "GET") {
       const bot = computerPreviewBot(m[1], url);
       if (!bot) return json(res, 404, { error: "no such bot" });
-      return json(res, 200, await localVmPayload(localVmTargetForBot(bot.id)));
+      return json(res, 200, await localVmPayload(localVmTargetForBot(bot.id), req, localVmMode(cfg) === "per-bot" ? bot.id : undefined));
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/local-computer\/(run|stop|remove)$/);
     if (m && method === "POST") {
@@ -19955,7 +19987,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (action === "run") localVmIdleFor(target).touch();
         if (action === "stop" || action === "remove") localVmIdleFor(target).cancel();
         return json(res, 200, {
-          ...status,
+          ...localVmStatusForRequest(status, req, bot.id),
           commands: setupCommands(status.runtime, process.platform, target),
           idle_timeout_ms: LOCAL_VM_IDLE_MS,
           mode: localVmMode(cfg),

@@ -4,6 +4,24 @@
 		default http
 	}
 	encode zstd gzip
+	@local_vm path_regexp vm ^/local-vm/(?:shared|bots/[\w-]+)(/.*)$
+	handle @local_vm {
+		route {
+			request_header -X-OpenMausBot-Viewer-Port
+			forward_auth 127.0.0.1:8799 {
+				uri /api/local-computer/viewer-authorize
+				header_up X-Forwarded-Proto {upstream_scheme}
+				copy_headers X-OpenMausBot-Viewer-Port
+			}
+			rewrite * {re.vm.1}
+			reverse_proxy 127.0.0.1:{http.request.header.X-OpenMausBot-Viewer-Port} {
+				header_up -Cookie
+				header_up -Authorization
+				header_up -X-OpenMausBot-Viewer-Port
+				header_down Cache-Control "private, no-store"
+			}
+		}
+	}
 	handle /hooks/* {
 		reverse_proxy 127.0.0.1:8800
 	}

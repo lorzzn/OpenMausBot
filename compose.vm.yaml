@@ -1,0 +1,43 @@
+# Add a dedicated Docker daemon for Local VM desktops. Its socket is shared
+# only with the OpenMausBot app, not with the host Docker daemon.
+services:
+  omb:
+    build:
+      context: .
+      dockerfile: deploy/local/Dockerfile.vm
+      args:
+        BASE_IMAGE: openmausbot-local:latest
+    image: openmausbot-vm:local
+    # The Cua desktop runs as UID 1000 and needs to own its durable workspace.
+    user: "1000:1000"
+    environment:
+      DOCKER_HOST: unix:///run/docker/docker.sock
+      OMB_LOCAL_VM_VIEWER_PROXY: "1"
+    volumes:
+      - vm_socket:/run/docker
+      - /usr/bin/docker:/usr/local/bin/docker:ro
+
+  dind:
+    image: docker:29-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0
+    privileged: true
+    network_mode: service:omb
+    restart: unless-stopped
+    stop_grace_period: 45s
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    # A Unix socket only; never expose the Docker API over TCP.
+    command:
+      - dockerd
+      - --host=unix:///run/docker/docker.sock
+      - --group=1000
+      - --storage-driver=overlay2
+    volumes:
+      - data:/data
+      - vm_socket:/run/docker
+      - vm_docker_data:/var/lib/docker
+
+volumes:
+  vm_socket:
+  vm_docker_data:
+    external: true
+    name: openmausbot_vm_docker_data
