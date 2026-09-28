@@ -4,6 +4,7 @@ Run the isolated integration recipe:
 
 ```sh
 pnpm exec vitest run server/full-access-workflows.e2e.test.ts
+pnpm exec vitest run server/paired-full-access.e2e.test.ts server/approval-mode.test.ts server/auto-approve.test.ts
 pnpm exec vitest run server/team-setup-requests.test.ts server/profile-requests.test.ts server/routine-requests.test.ts
 pnpm exec electron scripts/smoke-approval-modes.cjs --all-threads-only
 pnpm typecheck
@@ -16,6 +17,12 @@ Full Access into its disposable saved state. It restarts against the same
 temporary home with a restricted environment. No production grant bypass or
 live application data is used. Both server processes are stopped before the
 fixture is removed.
+
+The paired-web test starts two disposable servers, one with the opt-in off and
+one with it on. It proves that a loopback caller, a client session, an admin
+bearer token, a cross-origin request, and an unconfirmed request cannot grant
+Full access. A paired admin cookie can grant one thread or every thread and
+revoke the grant. Neither test changes the running Docker workspace.
 
 The repository's scripted Claude fixture calls the real injected agents MCP
 proxy. Its tool choices and final narration are deterministic, not evidence

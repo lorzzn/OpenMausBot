@@ -10,6 +10,7 @@ import { stateForBot } from "@/lib/mascot";
 import { useStore, type Bot } from "@/state/store";
 import { approvalModeFor } from "../../../shared/approval-mode";
 import { connectorGrantsState, type ConnectorGrantsState } from "@/lib/connector-grants";
+import { usePairedAdmin } from "@/lib/use-paired-admin";
 
 export type BotPatch = Partial<
   Pick<
@@ -52,6 +53,7 @@ export type BotPatch = Partial<
 export function useBotSettingsDerived(bot: Bot) {
   const { state, dispatch } = useStore();
   const { capabilities } = useDesktopCapabilities();
+  const pairedAdmin = usePairedAdmin();
   const providerSupportsLocal = instanceSupportsLocalComputer(state.instances, bot);
   const localSelectable = localComputerSelectable({ capabilities, providerSupportsLocal });
   const localDisabledReason = localComputerDisabledReason({ capabilities, providerSupportsLocal });
@@ -61,10 +63,11 @@ export function useBotSettingsDerived(bot: Bot) {
   const engine = state.instances.find((instance) => instance.instanceId === bot.modelSelection.instanceId);
   // The approval level (ask / auto / full / custom) as the shared rule reads
   // it from the record — bots saved before approvalMode existed still carry
-  // only autoApprove. Full and Custom need the packaged desktop's trusted
-  // channel (SettingsPanel used the same test before the dialog replaced it).
+  // only autoApprove. Custom needs the packaged desktop; Full also permits
+  // an explicit paired-admin grant on an opted-in self-hosted web server.
   const approvalMode = approvalModeFor(bot);
-  const trustedModesAvailable = Boolean(window.ogb?.approvals && capabilities.host.packaged);
+  const customAvailable = Boolean(window.ogb?.approvals && capabilities.host.packaged);
+  const trustedModesAvailable = customAvailable || Boolean(state.config?.features?.pairedWebFullAccess && pairedAdmin);
   const canCoordinate = engine?.capabilities?.agentsMcp === true;
   const canUseConnectedApps = engine?.capabilities?.composioMcp === true;
   const canUseVps = engine?.capabilities?.computerMcp === true && engine.driverKind !== "boxAgent";
@@ -99,6 +102,7 @@ export function useBotSettingsDerived(bot: Bot) {
     engine,
     approvalMode,
     trustedModesAvailable,
+    customAvailable,
     canCoordinate,
     canUseConnectedApps,
     canUseVps,

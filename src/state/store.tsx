@@ -637,7 +637,7 @@ export interface ConfigStatus {
   /** UI language override; "" (or absent) follows the system language. */
   language?: string;
   /** Opt-in flags. Absent means off. */
-  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean };
+  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; pairedWebFullAccess?: boolean };
   /** First-run progress: whether the welcome tour was finished and which
    * one-time hints were dismissed. Server-owned so it follows the workspace. */
   onboarding?: OnboardingStatus;
@@ -2399,8 +2399,37 @@ type TrustedApprovalBridge = {
   ): Promise<BotAnnouncement>;
 };
 
-/** Composer changes use the same private bridge as bot settings, but never
- * change profile defaults. Confirmation is UI state, never an HTTP credential. */
+/** A self-hosted paired admin may grant Full through a cookie-only endpoint.
+ * The server checks the session again; a bot's loopback HTTP authority cannot
+ * use this path. All other modes keep their ordinary PATCH behavior. */
+const pairedWebApprovals: TrustedApprovalBridge = {
+  async setMode(botId, mode, options) {
+    if (mode === "custom") throw new Error("Custom approval requires the packaged desktop app");
+    if (mode === "full" || mode === "ask") {
+      const result = await api(`/api/bots/${botId}/paired-full-access`, {
+        method: "POST",
+        body: JSON.stringify({
+          mode,
+          scope: options?.threadOnly ? "thread" : options?.allThreads ? "all" : "bot",
+          ...(options?.threadOnly ? { threadId: options.threadId } : {}),
+          ...(mode === "full" ? { confirmation: "approve-all-tools" } : {}),
+        }),
+      });
+      return result.bot;
+    }
+    const path = options?.threadOnly
+      ? `/api/bots/${botId}/tasks/${options.threadId}`
+      : `/api/bots/${botId}`;
+    const result = await api(path, {
+      method: "PATCH",
+      body: JSON.stringify({ approvalMode: mode, acknowledgeLocalAuto: options?.acknowledgeLocalAuto === true }),
+    });
+    return result.bot;
+  },
+};
+
+/** Composer changes use the trusted approval path but never change profile
+ * defaults. Confirmation is UI state, never an ordinary PATCH credential. */
 export async function persistTaskApproval(
   botId: string, threadId: string, patch: TaskUpdatePatch,
   bridge: TrustedApprovalBridge | undefined,
@@ -2699,7 +2728,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () =>
       createBotPatchQueue({
         send: (botId, patch, signal, currentBot) =>
-          persistBotUpdate(botId, patch, signal, api, window.ogb?.approvals, currentBot),
+          persistBotUpdate(botId, patch, signal, api,
+            window.ogb?.approvals ?? (stateRef.current.config?.features?.pairedWebFullAccess ? pairedWebApprovals : undefined), currentBot),
         reconcile: async (botId, signal) => {
           const result: { bots: BotAnnouncement[] } = await api(`/api/bots?messages=${MESSAGE_PAGE_SIZE}`, { signal });
           return result.bots.find((candidate) => candidate.id === botId) ?? null;
@@ -2786,7 +2816,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               threadId, modelSelection: patch.modelSelection, updateBotDefault: Boolean(patch.updateBotDefault),
             });
           }
-          return persistTaskApproval(botId, threadId, patch, window.ogb?.approvals);
+          return persistTaskApproval(botId, threadId, patch,
+            window.ogb?.approvals ?? (stateRef.current.config?.features?.pairedWebFullAccess ? pairedWebApprovals : undefined));
         });
       // Later edits still get saved after an earlier failure, but a send
       // awaiting this batch must observe every rejected setting in it. A

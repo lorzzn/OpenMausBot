@@ -394,6 +394,8 @@ export async function launchVerificationServer(
   extraProviders: Array<"codex"> = [],
   /** Programmatic tests only: an owned loopback Box provider, never a live account. */
   boxFixtureApi?: string,
+  /** Programmatic tests only: exercise the paired web grant on an isolated server. */
+  pairedWebFullAccess = false,
 ): Promise<VerificationServer> {
   if (boxFixtureApi) {
     if (!/^http:\/\/127\.0\.0\.1:[1-9]\d{0,4}$/.test(boxFixtureApi)) {
@@ -454,6 +456,7 @@ export async function launchVerificationServer(
     AGENT_BROWSER_EXECUTABLE_PATH: browser.executablePath,
   });
   if (boxFixtureApi) childEnv.OMB_BOX_API = boxFixtureApi;
+  if (pairedWebFullAccess) childEnv.OMB_PAIRED_WEB_FULL_ACCESS = "1";
   const serverArgs = ["--experimental-strip-types"];
   if (childEnv.OMB_TEST_FAIL_AUDIO_APPEND_ONCE === "1") {
     serverArgs.push("--import", pathToFileURL(join(ROOT, "server", "testing", "fail-audio-append-once.mjs")).href);

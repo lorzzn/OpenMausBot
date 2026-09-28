@@ -107,7 +107,7 @@ export function autoVerdict(
     return { approve: null, source: "no-grant" };
   }
   // Full's promise is literal: even a sandbox widening is approved. Entering
-  // Full is separately consent-gated by the bot PATCH endpoint, and the
+  // Full is separately consent-gated by the desktop or paired-admin path, and the
   // request.opened caller invokes this for permissions only, never questions.
   if (mode === "full") return { approve: `approved ${tool} (full access)`, source: "full-access" };
   if (context?.requiresExplicitApproval) return { approve: null, source: "explicit-approval-block" };

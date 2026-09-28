@@ -479,6 +479,7 @@ import {
   clientGroupPatchViolation,
   isLoopbackHost,
   isProxied,
+  isSameOrigin,
   labelFromUserAgent,
   requestOrigin,
   requestSource,
@@ -616,6 +617,7 @@ const SESSION_COOKIE = sessionCookieName(PORT, ENVIRONMENT_ID);
 const HOSTED_WORKSPACE = hostedWorkspaceConfigured();
 let workspaceAccess: WorkspaceAccess | null = null;
 const DESKTOP_MANAGED = process.env.OMB_DESKTOP_PARENT === "1";
+const PAIRED_WEB_FULL_ACCESS = process.env.OMB_PAIRED_WEB_FULL_ACCESS === "1" && !DESKTOP_MANAGED && !HOSTED_WORKSPACE;
 const SHARED_WORKSPACE_FULL_ACCESS = sharedWorkspaceFullAccessConfigured();
 const sharedWorkspaceFullAccessEnabled = () => SHARED_WORKSPACE_FULL_ACCESS && Boolean(workspaceAccess) && entitled("admin");
 // Who a loopback request without a session is (server/request-auth.ts
@@ -1062,6 +1064,10 @@ function adminAuditPlan(method: string, path: string): AuditPlan | null {
   };
   let m = /^\/api\/bots\/([\w-]+)(?:\/(always-allow|model))?$/.exec(path);
   if (m && ((!m[2] && method === "PATCH") || (m[2] === "model" && method === "PATCH") || (m[2] === "always-allow" && method === "POST"))) plan.botId = m[1];
+  if (method === "POST") {
+    const approval = /^\/api\/bots\/([\w-]+)\/paired-full-access$/.exec(path);
+    if (approval) plan.botId = approval[1];
+  }
   if (m && !m[2] && method === "DELETE") plan.deletesBot = m[1];
   m = /^\/api\/webhooks\/([\w-]+)(\/rotate)?$/.exec(path);
   if (m && ((m[2] && method === "POST") || (!m[2] && (method === "PATCH" || method === "DELETE")))) plan.webhookId = m[1];
@@ -1084,6 +1090,7 @@ const hookFields = (hook: WebhookTrigger, fields: readonly string[] = WEBHOOK_AU
 /** The bot fields a PATCH named: only those are compared, so a concurrent
  * change to another field is not put down to this request. */
 function requestedBotFields(req: IncomingMessage, path: string): string[] {
+  if (path.endsWith("/paired-full-access")) return ["approvalMode", "autoApprove"];
   if (path.endsWith("/always-allow")) return ["alwaysAllow"];
   if (path.endsWith("/model")) return ["modelSelection"];
   const body = parsedBodyOf(req);
@@ -12685,6 +12692,7 @@ function configStatus() {
       // Plugins → MCP servers switch: Claude bots also see this machine's
       // own Claude Code MCP servers
       claudeUserMcp: claudeUserMcpEnabled(cfg),
+      pairedWebFullAccess: PAIRED_WEB_FULL_ACCESS,
     },
     // first-run progress — not a secret; the app decides whether to show
     // the welcome tour from this, never from browser storage
@@ -17650,6 +17658,57 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           activeLeafId: store.activeLeaf(bot.threadId),
         },
       });
+    }
+    // A paired browser admin can explicitly grant the same Full mode as the
+    // desktop bridge. The separate cookie-only route matters: the ordinary
+    // loopback owner API is reachable from a bot's shell, so it must never
+    // acquire this grant merely by POSTing a confirmation field.
+    m = path.match(/^\/api\/bots\/([\w-]+)\/paired-full-access$/);
+    if (m && method === "POST") {
+      if (!PAIRED_WEB_FULL_ACCESS) return json(res, 404, { error: "Paired web Full access is disabled" });
+      if (auth.kind !== "session" || auth.via !== "cookie" || !auth.scopes.includes("admin") ||
+        typeof req.headers.origin !== "string" || !isSameOrigin(req)) {
+        return json(res, 403, { error: "A same-origin paired admin browser is required" });
+      }
+      if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) {
+        return json(res, 415, { error: "send the approval change as JSON" });
+      }
+      const parsed = z.object({
+        mode: z.enum(["full", "ask"]),
+        scope: z.enum(["bot", "thread", "all"]),
+        threadId: z.string().regex(/^[\w-]{1,128}$/).optional(),
+        confirmation: z.literal("approve-all-tools").optional(),
+      }).strict().safeParse(await readBody(req));
+      if (!parsed.success) return json(res, 400, { error: "Invalid approval change" });
+      const { mode, scope, threadId, confirmation } = parsed.data;
+      if ((scope === "thread") !== Boolean(threadId)) return json(res, 400, { error: "Choose exactly one thread for thread access" });
+      if (mode === "full" && confirmation !== "approve-all-tools") return json(res, 400, { error: "Confirm Full access first" });
+      const bot = store.bot(m[1]);
+      if (!bot) return json(res, 404, { error: "no such bot" });
+      if (bot.approvalGrant) return json(res, 409, { error: "Finish the pending approval change first" });
+      const target = threadId ? store.projectBotForTask(bot.id, threadId) : bot;
+      if (!target) return json(res, 404, { error: "no such thread" });
+      if (mode === "ask" && (approvalModeFor(target) === "custom" ||
+        (scope === "all" && store.tasks(bot.id).some(task => approvalModeFor(task) === "custom")))) {
+        return json(res, 403, { error: "Custom approval must be changed in the packaged desktop app" });
+      }
+      if (mode === "full") {
+        if (botHasActiveTurn(bot.id) || store.tasks(bot.id).some(task => threadBusy(bot.id, task.threadId)) ||
+          Boolean(routines?.activeRunForBot(bot.id)) || phoneSecretSubmissions.hasBot(bot.id)) {
+          return json(res, 409, { error: "Stop this bot's work before enabling Full access" });
+        }
+        if (!supportsApprovalMode(target.modelSelection, "full") ||
+          (scope === "all" && store.tasks(bot.id).some(task => !supportsApprovalMode(task.modelSelection ?? bot.modelSelection, "full")))) {
+          return json(res, 400, { error: "Every selected thread's engine must support Full access" });
+        }
+      }
+      if (scope === "all") store.setAllThreadApprovalMode(bot.id, mode);
+      else if (scope === "thread") store.patchTask(bot.id, threadId!, { approvalMode: mode, autoApprove: false, alwaysAllow: [] });
+      else store.patchBot(bot.id, { approvalMode: mode, autoApprove: false, alwaysAllow: [] });
+      if (mode === "ask" && botHasActiveTurn(bot.id)) await stopBotForEmergencyApprovalDowngrade(bot.id);
+      const fresh = wireBot(store.bot(bot.id)!);
+      broadcast({ kind: "bot", bot: fresh });
+      return json(res, 200, { bot: fresh });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/avatar\/generate$/);
     if (m && method === "POST") {

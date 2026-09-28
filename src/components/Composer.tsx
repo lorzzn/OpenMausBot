@@ -5,6 +5,7 @@ import { useStore, visibleMessages, currentTaskBot, type Bot, type Group, type M
 import { cn } from "@/lib/cn";
 import { activeLocale, t } from "@/lib/i18n";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
+import { usePairedAdmin } from "@/lib/use-paired-admin";
 import {
   draftRevision,
   appendDraftAttachments,
@@ -117,6 +118,7 @@ export function Composer({
   const locked = setupLocked || Boolean(bot?.awaitingThreadSnapshot);
   const { state, dispatch } = useStore();
   const ownerOrAdmin = useOwnerOrAdmin();
+  const pairedAdmin = usePairedAdmin();
   const { threads, currentBotId } = useThreadRefs();
   const { capabilities } = useDesktopCapabilities();
   const remoteClient = window.ogb?.remoteClient?.active === true;
@@ -501,7 +503,8 @@ export function Composer({
   const approvalEngine = modeBot
     ? state.instances.find((instance) => instance.instanceId === modeBot.modelSelection.instanceId)
     : undefined;
-  const trustedThreadAccess = Boolean(!remoteClient && window.ogb?.approvals && capabilities.host.packaged);
+  const customThreadAccess = Boolean(!remoteClient && window.ogb?.approvals && capabilities.host.packaged);
+  const trustedThreadAccess = customThreadAccess || Boolean(state.config?.features?.pairedWebFullAccess && pairedAdmin);
   const uploadImage = useCallback(async (file: File): Promise<Attachment | null> => {
     const optimistic = optimisticImageAttachment(file);
     if (!optimistic) return null;
@@ -1013,6 +1016,7 @@ export function Composer({
                   onSelect={setApprovalMode}
                   disabled={Boolean(modeBot.busy)}
                   trustedModesAvailable={trustedThreadAccess}
+                  customAvailable={customThreadAccess}
                   onManageCommandAllowlist={ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
                 />
               )}

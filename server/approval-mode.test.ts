@@ -40,11 +40,11 @@ describe("approval modes", () => {
   it.each([
     "kimiAgent", "droidAgent", "hermesAgent", "customAcp",
     "piAgent", "boxAgent", "unknown",
-  ])("keeps %s on supported approval levels without claiming native Auto", (driver) => {
+  ])("offers harness Full for known %s without claiming native Auto", (driver) => {
     expect(supportsApprovalMode(driver, "ask")).toBe(true);
     expect(supportsApprovalMode(driver, "auto")).toBe(true);
     expect(supportsApprovalMode(driver, "edits")).toBe(false);
-    expect(supportsApprovalMode(driver, "full")).toBe(false);
+    expect(supportsApprovalMode(driver, "full")).toBe(driver !== "unknown");
     expect(supportsApprovalMode(driver, "custom")).toBe(false);
     expect(hasNativeAutoReview(driver)).toBe(false);
   });
@@ -126,7 +126,7 @@ describe("approval support bound to a registry", () => {
     expect(supports(codex, "custom")).toBe(true);
     expect(supports(computer, "ask")).toBe(true);
     expect(supports(computer, "auto")).toBe(true);
-    expect(supports(computer, "full")).toBe(false);
+    expect(supports(computer, "full")).toBe(true);
     expect(supports(computer, "custom")).toBe(false);
   });
 
@@ -141,7 +141,7 @@ describe("approval support bound to a registry", () => {
 
   it("passes already-resolved driver views to the table unchanged", () => {
     expect(supports({ driverKind: "codex" }, "custom")).toBe(true);
-    expect(supports({ driverKind: "boxAgent" }, "full")).toBe(false);
+    expect(supports({ driverKind: "boxAgent" }, "full")).toBe(true);
     expect(supports({ driverKind: undefined }, "ask")).toBe(true);
     expect(supports({ driverKind: undefined }, "full")).toBe(false);
   });

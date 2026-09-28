@@ -20,7 +20,11 @@ export function supportsApprovalMode(driverKind: string | undefined, mode: Appro
   // gate instead of opening a card. Without this a bot on one of these
   // engines could never stop asking — not by its own level, and not through
   // a Chief's delegated Full access either.
+  // ACP and Pi permission requests also pass through the harness, where Full
+  // answers each tool request. Box has only question cards; Full cannot answer
+  // those for the person, but is still a valid default for delegated work.
   return ["codex", "claudeAgent", "antigravityAgent", "cursorAgent", "grokAgent", "opencodeGo", "qwenAgent", "geminiAgent",
+    "kimiAgent", "droidAgent", "hermesAgent", "customAcp", "piAgent", "boxAgent",
     "openai-compat", "grok", "minimax", "mistral"].includes(driverKind ?? "");
 }
 

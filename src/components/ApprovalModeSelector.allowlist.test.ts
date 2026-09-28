@@ -33,7 +33,7 @@ describe("command allowlist menu access", () => {
     const select = vi.fn(), manage = vi.fn();
     render(select, manage).nodes.find((node) => node.props["aria-haspopup"] === "menu")!.props.onClick!();
     const open = render(select, manage);
-    expect(open.html.indexOf("Full access")).toBeLessThan(open.html.indexOf("Command allowlist"));
+    expect(open.html.indexOf("Auto (full access)")).toBeLessThan(open.html.indexOf("Command allowlist"));
     expect(open.html.indexOf("Command allowlist")).toBeLessThan(open.html.indexOf("Custom (config.toml)"));
     open.nodes.find((node) => node.props.role === "menuitem")!.props.onClick!();
     expect(manage).toHaveBeenCalledOnce();
@@ -45,7 +45,7 @@ describe("command allowlist menu access", () => {
     const select = vi.fn(), manage = vi.fn();
     fixture.open = true;
     const full = render(select, manage).nodes.filter((node) => node.props.role === "menuitemradio")
-      .find((node) => renderToStaticMarkup(node).includes("Full access"))!;
+      .find((node) => renderToStaticMarkup(node).includes("Auto (full access)"))!;
     full.props.onClick!();
     expect(select).toHaveBeenCalledExactlyOnceWith("full");
     expect(manage).not.toHaveBeenCalled();

@@ -44,15 +44,16 @@ export function approvalModeOptions(): ApprovalModeOption[] {
   }));
 }
 
-export function approvalModeOptionsFor(driverKind: string, trustedModesAvailable = true) {
+export function approvalModeOptionsFor(driverKind: string, trustedModesAvailable = true, customAvailable = trustedModesAvailable) {
   return approvalModeOptions()
     .filter((option) => supportsApprovalMode(driverKind, option.mode)
-      // Antigravity has no native reviewer. Offer its explicit full-access
-      // grant as Auto instead of a second choice that actually behaves as Ask.
-      && (driverKind !== "antigravityAgent" || option.mode !== "auto")
-      && (trustedModesAvailable || option.mode === "ask" || option.mode === "edits" || option.mode === "auto"))
+      // Engines without a reviewer would make safe Auto behave like Ask.
+      // Their explicit Full grant is the working auto-approve choice.
+      && (option.mode !== "auto" || hasNativeAutoReview(driverKind) || !supportsApprovalMode(driverKind, "full"))
+      && (trustedModesAvailable || option.mode === "ask" || option.mode === "edits" || option.mode === "auto")
+      && (customAvailable || option.mode !== "custom"))
     .map((option) => {
-      if (driverKind === "antigravityAgent" && option.mode === "full") {
+      if (option.mode === "full") {
         return {
           ...option,
           label: t("approvalMode.antigravity.label"),
@@ -92,6 +93,7 @@ export function ApprovalModeSelector({
   wide = false,
   disabled = false,
   trustedModesAvailable = true,
+  customAvailable = trustedModesAvailable,
   trustedModesNotice,
   onManageCommandAllowlist,
 }: {
@@ -105,6 +107,7 @@ export function ApprovalModeSelector({
   wide?: boolean;
   disabled?: boolean;
   trustedModesAvailable?: boolean;
+  customAvailable?: boolean;
   trustedModesNotice?: string;
   onManageCommandAllowlist?: () => void;
 }) {
@@ -112,17 +115,18 @@ export function ApprovalModeSelector({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const savedMode = approvalModeFor({ approvalMode, autoApprove });
-  // Old Antigravity Auto settings still ask. Do not display or silently grant
-  // the new Auto/full-access behavior until the user explicitly selects it.
-  const mode = driverKind === "antigravityAgent" && savedMode === "auto" ? "ask" : savedMode;
+  // Old Auto settings on engines with no reviewer still ask. Never display or
+  // silently grant Full until the person explicitly selects it.
+  const mode = savedMode === "auto" && !hasNativeAutoReview(driverKind) && supportsApprovalMode(driverKind, "full")
+    ? "ask" : savedMode;
   const allOptions = approvalModeOptions();
   const current = approvalModeOptionsFor(driverKind).find((option) => option.mode === mode)
     ?? allOptions.find((option) => option.mode === mode)
     ?? allOptions[0];
-  const visibleOptions = approvalModeOptionsFor(driverKind, trustedModesAvailable);
+  const visibleOptions = approvalModeOptionsFor(driverKind, trustedModesAvailable, customAvailable);
   const requiresLocalDesktop = approvalModeSelectionRequiresLocalDesktop(
     mode,
-    trustedModesAvailable,
+    customAvailable,
   );
 
   useEffect(() => {
