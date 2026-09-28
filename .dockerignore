@@ -12,6 +12,7 @@ release
 *.log
 electron/resources/cloudflared*
 .omb-scratch
+.omb-local-tls
 .env
 **/.env
 **/.env.*

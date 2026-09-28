@@ -24,6 +24,36 @@ Private tailnet webhook URLs are only reachable by callers on that tailnet.
 Without `OMB_HTTPS_HOST`, the bind address can be changed for HTTP access.
 Only use HTTPS hostname mapping with a trusted local TLS-terminating proxy.
 
+## HTTPS on local IP addresses (no domain)
+
+Browsers reserve APIs such as `crypto.randomUUID()` for secure contexts. For a
+browser on another machine, `http://192.168.x.x:8080` is not a secure context.
+Use the optional HTTPS overlay to serve the same app at the host's IP addresses:
+
+```sh
+./deploy/local/make-https-cert.sh
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.https.yaml up -d
+```
+
+The script detects all currently active host IPv4 addresses, including LAN and
+VPN addresses. It creates a private local CA and one server certificate
+containing those addresses, plus `localhost` and `127.0.0.1`. It writes them to
+the ignored `.omb-local-tls/` directory; the Docker build context excludes that
+directory too. `compose.https.yaml` listens on all host interfaces at port
+8443 by default, while keeping the existing HTTP port. HTTP requests to the
+detected IPs redirect to HTTPS. Use `OMB_HTTPS_PORT` to change the HTTPS port.
+If an IP changes, rerun the script and recreate the `caddy` service with
+`docker compose -f compose.yaml -f compose.vm.yaml -f compose.https.yaml up -d --no-deps --force-recreate caddy`.
+You can also pass explicit IPv4 addresses to the script.
+
+Each client must trust `.omb-local-tls/rootCA.crt` for the HTTPS origin to be
+fully trusted. On Windows, import that certificate into the current user's
+**Trusted Root Certification Authorities** store. Keep `rootCA.key` and
+`server.key` on the host. Caddy reads the server certificate but not the CA key.
+The leaf certificate lasts one year; rerun the script to renew it while keeping
+the same root CA. A new root CA requires importing the new certificate on each
+client again.
+
 Sign in and pair a browser:
 
 ```sh

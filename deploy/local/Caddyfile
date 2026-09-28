@@ -1,8 +1,4 @@
-:80 {
-	map {host} {upstream_scheme} {
-		{$OMB_HTTPS_HOST:https-disabled.invalid} {$OMB_UPSTREAM_SCHEME:http}
-		default http
-	}
+(omb_routes) {
 	encode zstd gzip
 	@local_vm path_regexp vm ^/local-vm/(?:shared|bots/[\w-]+)(/.*)$
 	handle @local_vm {
@@ -32,3 +28,14 @@
 		}
 	}
 }
+
+:80 {
+	map {host} {upstream_scheme} {
+		{$OMB_HTTPS_HOST:https-disabled.invalid} {$OMB_UPSTREAM_SCHEME:http}
+		default http
+	}
+	import /etc/caddy/http-optional/*.caddy
+	import omb_routes
+}
+
+import /etc/caddy/optional/*.caddy

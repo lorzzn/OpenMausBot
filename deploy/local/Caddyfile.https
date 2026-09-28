@@ -1,0 +1,7 @@
+:443 {
+	tls /etc/caddy/local-certs/server.crt /etc/caddy/local-certs/server.key
+	map {host} {upstream_scheme} {
+		default https
+	}
+	import omb_routes
+}

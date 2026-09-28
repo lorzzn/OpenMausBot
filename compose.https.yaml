@@ -1,0 +1,14 @@
+# Optional IP-based HTTPS for the local Docker deployment. Generate the certs
+# with deploy/local/make-https-cert.sh before applying this overlay.
+services:
+  omb:
+    ports:
+      - "0.0.0.0:${OMB_HTTPS_PORT:-8443}:443"
+  caddy:
+    environment:
+      OMB_HTTPS_PORT: ${OMB_HTTPS_PORT:-8443}
+    volumes:
+      - ./deploy/local/Caddyfile.https:/etc/caddy/optional/https.caddy:ro
+      - ./.omb-local-tls/http-redirect.caddy:/etc/caddy/http-optional/redirect.caddy:ro
+      - ./.omb-local-tls/server.crt:/etc/caddy/local-certs/server.crt:ro
+      - ./.omb-local-tls/server.key:/etc/caddy/local-certs/server.key:ro
