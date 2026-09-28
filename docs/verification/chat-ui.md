@@ -176,8 +176,8 @@ fixture-only text/reasoning probe. It pauses `requestAnimationFrame`, sends
 through the shared control surface, and holds the fake CLI's final frames
 until both intermediate channels reach the renderer. After settlement it
 asserts exactly one complete reply and empty stream channels, including after
-the fallback timer could fire. This probes state; the current app's active-turn
-tail displays presence rather than partial text/reasoning.
+the fallback timer could fire. This probes state; the active-turn tail shows
+partial assistant text while reasoning remains ephemeral.
 
 ```sh
 OMB_UI_E2E=1 pnpm exec vitest run scripts/testing/stream-buffer.e2e.test.ts

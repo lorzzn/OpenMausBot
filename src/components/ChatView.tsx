@@ -50,6 +50,7 @@ import { peerLine, type PeerLine } from "@/lib/peer-message";
 import { showWorkingDots } from "@/lib/turn-tail";
 import { liveActivityLabel } from "@/lib/live-activity";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { StreamingReply } from "./StreamingReply";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { RawMarkdownView, RawToggleAction } from "./RawMarkdownToggle";
 import { ThreadChip } from "./ThreadChip";
@@ -1035,8 +1036,8 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
     return attached.images.length > 0 || attached.files.length > 0;
   }, [lastUserMessage]);
 
-  // Mascot while the turn works. Streaming stays invisible — when the reply
-  // is finished, the whole bubble pops in above the mascot.
+  // Mascot while the turn works. Incremental text appears in a temporary
+  // bubble below the settled transcript as soon as the engine sends it.
   const lastMessage = messages.at(-1);
   const toolInFlight = lastMessage?.kind === "activity" && lastMessage.tool?.ok === undefined;
   const activityLabel = liveActivityLabel(lastMessage);
@@ -1478,6 +1479,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
               </div>
             </div>
           )}
+          {streaming && <StreamingReply text={streaming} mentionPeers={state.bots.filter((peer) => peer.id !== bot.id)} />}
           <TurnPresence
             avatar={
               // BotAvatar, not a bare MausAvatar: an uploaded profile image

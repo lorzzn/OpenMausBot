@@ -27,6 +27,7 @@ import { roomActivityVisible } from "@/lib/room-activity";
 import { normalizeState } from "@/lib/mascot";
 import { effectiveDefaultResponder, groupResponseHint } from "@/lib/group-routing";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { StreamingReply } from "./StreamingReply";
 import { Composer } from "./Composer";
 import { ChatFindBar } from "./ChatFindBar";
 import { GroupTaskPicker } from "./TaskPicker";
@@ -948,7 +949,8 @@ export function GroupView({ group }: { group: Group }) {
   const speaker = members.find((b) => b.id === group.busyBotId);
   const setupPending = !remoteClient && roomNeedsSetup(group);
 
-  // Mascot stays while a member works; the finished reply pops in above it.
+  // Mascot stays while a member works; partial text appears above it until
+  // the settled reply replaces the temporary bubble.
   const lastGroupMessage = group.messages.at(-1);
   const toolInFlight = lastGroupMessage?.kind === "activity" && lastGroupMessage.tool?.ok === undefined;
   const activityLabel = liveActivityLabel(lastGroupMessage);
@@ -1397,6 +1399,7 @@ export function GroupView({ group }: { group: Group }) {
               </button>
             </div>
           )}
+          {streaming && <StreamingReply text={streaming} mentionPeers={members} everyone={!group.dm} speakerName={speaker?.name} />}
           {(speaker || presenceVisible) && (
             <TurnPresence
               avatar={

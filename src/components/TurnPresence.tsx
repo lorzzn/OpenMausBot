@@ -1,6 +1,6 @@
 // Left-edge tail: mascot looks around while it works, with a live activity
-// sheen beside it. The moment there is an answer, the label is gone while
-// the canonical transcript row performs the settle-in animation above it.
+// sheen beside it. Incremental text can appear above it; the completed
+// transcript row replaces that temporary text when the turn settles.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { WorkingTimer } from "@/components/WorkingIndicator";
