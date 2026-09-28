@@ -17,6 +17,7 @@ electron/resources/OpenMausBot Recorder.app
 release
 .omb-scratch
 .omb-local-tls/
+.omb-cloudflare/
 .wrangler/
 .dev.vars
 .dev.vars.*

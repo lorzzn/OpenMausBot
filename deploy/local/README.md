@@ -75,6 +75,56 @@ loopback API or a non-admin paired session.
 On Windows, `./maus.ps1` forwards arguments to Compose using the repository
 directory. It respects Docker's selected context and `DOCKER_CONTEXT`.
 
+## Cloudflare Tunnel for this installation
+
+`compose.tunnel.yaml` adds a remotely managed Cloudflare Tunnel for
+`https://omb.oomdev.de5.net`. Keep the existing `compose.https.yaml`: the
+connector shares the app container's network namespace and reaches Caddy at
+`https://localhost:443`. Its local TLS certificate is checked against the
+existing private CA, while browsers see Cloudflare's public HTTPS certificate.
+The existing host ports `8080` (HTTP) and `8443` (local HTTPS) stay published on
+all interfaces. They and the public hostname lead to the same app and data.
+
+In Cloudflare, make sure `oomdev.de5.net` is available as a zone. Create a
+remotely managed Tunnel under **Networking → Tunnels**. Add a proxied DNS CNAME
+for `omb.oomdev.de5.net` pointing to
+`19cebe5b-cf49-497e-b694-4585196878cf.cfargotunnel.com` (replace the UUID
+if recreating the Tunnel). This installation's DNS record is already present.
+The only credential needed on this machine is the Tunnel Token from the
+Tunnel's installation or **Add a replica** command. Save only the
+`eyJ...` token by running `./deploy/local/save-tunnel-token.sh` in a terminal;
+the input is hidden. It goes to the Git-ignored `.omb-cloudflare/tunnel-token`
+with mode 0600. Do not paste the token into `compose.tunnel.yaml`, `.env`, a
+command argument, or a chat message. By default `cloudflared` runs as UID/GID
+1000 to read that file and `rootCA.crt`; set `OMB_TUNNEL_UID` and
+`OMB_TUNNEL_GID` to the token file owner's numeric IDs if they differ.
+
+Start or update the stack from the repository root:
+
+```sh
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.https.yaml -f compose.tunnel.yaml up -d
+```
+
+This dedicated Tunnel uses the connector's local `--url` and TLS flags, so a
+Cloudflare **Published application** route is not required while the Tunnel has
+no remotely configured ingress rules. If you later add one in the dashboard,
+set its Service URL to `https://localhost:443`, Origin Server Name to
+`localhost`, CA Pool to `/etc/cloudflared/rootCA.crt`, and leave TLS certificate
+verification enabled. A remote route may take precedence over the local URL.
+
+Check `docker compose -f compose.yaml -f compose.vm.yaml -f compose.https.yaml -f compose.tunnel.yaml ps`
+and open `https://omb.oomdev.de5.net`. This overlay sets `OMB_PUBLIC_URL` and
+`OMB_WEBHOOK_PUBLIC_URL` to that public origin for new links and webhook URLs;
+it does not change the local IP listeners. A browser using the new hostname
+has a separate cookie and must sign in once by email or pair once.
+
+For browser-only access, an optional Cloudflare Access self-hosted application
+can restrict this exact hostname to specific email addresses before the
+request reaches OpenMausBot. That is separate from OpenMausBot's own login.
+If external webhooks will call `/hooks/`, give that path a deliberate Access
+policy instead of assuming browser login covers machines. Use a named Tunnel:
+Quick Tunnels do not support the SSE stream that carries live replies.
+
 Data and engine credentials persist in the named data volume. For an existing
 volume, set `OMB_DATA_VOLUME` to its name and `OMB_DATA_EXTERNAL=true`.
 Fresh installs create their volume automatically.

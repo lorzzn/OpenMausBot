@@ -1,0 +1,32 @@
+# Add this overlay to compose.yaml + compose.vm.yaml + compose.https.yaml.
+# The public hostname and local certificate are described in deploy/local/README.md.
+services:
+  omb:
+    environment:
+      OMB_PUBLIC_URL: https://omb.oomdev.de5.net
+      OMB_WEBHOOK_PUBLIC_URL: https://omb.oomdev.de5.net
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    restart: unless-stopped
+    user: "${OMB_TUNNEL_UID:-1000}:${OMB_TUNNEL_GID:-1000}"
+    network_mode: service:omb
+    command:
+      - tunnel
+      - --url
+      - https://localhost:443
+      - --origin-server-name
+      - localhost
+      - --origin-ca-pool
+      - /etc/cloudflared/rootCA.crt
+      - run
+      - --token-file
+      - /run/secrets/tunnel-token
+    volumes:
+      - ./.omb-cloudflare/tunnel-token:/run/secrets/tunnel-token:ro
+      - ./.omb-local-tls/rootCA.crt:/etc/cloudflared/rootCA.crt:ro
+    depends_on:
+      omb:
+        condition: service_healthy
+      caddy:
+        condition: service_started
