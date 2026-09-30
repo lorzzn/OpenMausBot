@@ -2391,7 +2391,7 @@ export async function api<T = any>(path: string, init?: RequestInit & { timeoutM
   return body;
 }
 
-type TrustedApprovalBridge = {
+export type TrustedApprovalBridge = {
   setMode(
     botId: string,
     mode: ApprovalMode,
@@ -2402,7 +2402,7 @@ type TrustedApprovalBridge = {
 /** A self-hosted paired admin may grant Full through a cookie-only endpoint.
  * The server checks the session again; a bot's loopback HTTP authority cannot
  * use this path. All other modes keep their ordinary PATCH behavior. */
-const pairedWebApprovals: TrustedApprovalBridge = {
+export const pairedWebApprovals: TrustedApprovalBridge = {
   async setMode(botId, mode, options) {
     if (mode === "custom") throw new Error("Custom approval requires the packaged desktop app");
     if (mode === "full" || mode === "ask") {

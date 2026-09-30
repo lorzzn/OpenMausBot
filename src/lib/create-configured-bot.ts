@@ -1,4 +1,4 @@
-import { api, persistBotUpdate, type Bot } from "@/state/store";
+import { api, persistBotUpdate, type Bot, type TrustedApprovalBridge } from "@/state/store";
 import type { Routine } from "./routines";
 import type { BotCreationDraft } from "./bot-creation-draft";
 import { imageAttachmentFromFile } from "./composer-attachments";
@@ -23,7 +23,7 @@ export async function createConfiguredBot(
   draft: BotCreationDraft,
   request: typeof api = api,
   update: typeof persistBotUpdate = persistBotUpdate,
-  approvals = typeof window === "undefined" ? undefined : window.ogb?.approvals,
+  approvals: TrustedApprovalBridge | undefined = typeof window === "undefined" ? undefined : window.ogb?.approvals,
   visibility?: BotVisibility,
 ): Promise<{ bot: Bot; warnings: string[] }> {
   const template = await preparedBotTemplate(draft);
