@@ -146,7 +146,7 @@ export function PermissionsSection({
             menuDirection="down"
             wide
             disabled={Boolean(bot.busy)}
-            trustedModesAvailable={trustedModesAvailable && (!draft || customAvailable)}
+            trustedModesAvailable={trustedModesAvailable}
             customAvailable={customAvailable}
             onManageCommandAllowlist={!draft && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name }) : undefined}
           />

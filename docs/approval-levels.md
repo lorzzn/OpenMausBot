@@ -15,10 +15,11 @@ Access, OMB also applies its own configuration tools without another approval.
 | **Full access** | Enables the provider's permissive mode for commands, edits, and selected-computer actions, including potentially destructive or sensitive work. Residual native permission prompts are answered for you. OMB profile changes, routine actions, team setup, bot deletion, and enabled skill authoring apply without a second approval. Peer-review prompts are skipped within the bot's authorized scope. Delegation uses the receiving bot's setting, never the sender's — except from a Chief of Staff with Full access (below). Actual questions and missing credentials still need your input. |
 | **Custom (`config.toml`)** | Codex only. OpenMausBot reads and reapplies the effective approval and sandbox settings from your Codex configuration. |
 
-Full access is an elevated-risk standing approval. Full and Custom can only be
-enabled from a packaged local desktop app, where the choice crosses a private
-process channel rather than the bot-accessible HTTP API. They are hidden in
-development, standalone web, and remote pages. Full access does not bypass operating
+Full access is an elevated-risk standing approval. The packaged local desktop
+app grants Full and Custom through a private process channel. An opted-in
+self-hosted server also lets a same-origin browser with an admin session grant
+Full access through its separate paired-web route. Other standalone or remote
+pages cannot grant Full; Custom remains desktop-only. Full access does not bypass operating
 system privacy controls, authentication, CAPTCHA or MFA, service permissions,
 or workspace/team ownership and computer-sharing grants. Full Access controls
 approval prompts; it does not sign in for you, enable a feature you disabled,
@@ -90,7 +91,8 @@ automatic reviewer. The composer chip reads **Auto**. This uses the existing
 Full access grant and confirmation, not a separate permission setting, and
 applies to every model in that Antigravity instance, including Gemini.
 
-Choose Auto explicitly in the local packaged desktop app. Old Antigravity
+Choose Auto explicitly in the packaged desktop app or an opted-in, paired-admin
+self-hosted browser. Old Antigravity
 `auto` / `autoApprove` settings still behave as Ask and are displayed as Ask;
 they never become unrestricted access on upgrade. Switching back to Ask
 restores prompts on the next turn. Questions and missing-credential forms
