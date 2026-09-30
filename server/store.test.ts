@@ -16,6 +16,7 @@ import * as mdb from "./message-db.ts";
 import { peerAllowKey } from "./peer-approval-key.ts";
 import { canAccessTeam } from "./peer-roster.ts";
 import { Store, toWireTask, type BotRecord } from "./store.ts";
+import { TOOL_TITLE_MAX_CHARS } from "./tool-title.ts";
 import type { TeamSetupRequest } from "../shared/team-setup.ts";
 import { SECTION_CONTEXTS_FILE, readSectionContext, writeSectionContext } from "./section-context.ts";
 import { TeamComputers } from "./team-computers.ts";
@@ -1960,6 +1961,22 @@ describe("Store bot activity state", () => {
 describe("Store redacts bot-authored secrets on write", () => {
   beforeEach(() => {
     rmSync(DATA_DIR, { recursive: true, force: true });
+  });
+
+  it("bounds new provider tool titles before persisting or emitting them", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const changes: string[] = [];
+    store.onChange((change) => {
+      if (change.type === "message" && change.message.tool) changes.push(change.message.tool.name);
+    });
+    const inserted = store.appendMessage(bot.threadId, {
+      role: "bot", kind: "activity", tool: { name: `Bash: ${"x".repeat(6_000)}` },
+    });
+    expect(inserted.tool?.name.length).toBeLessThanOrEqual(TOOL_TITLE_MAX_CHARS);
+    expect(changes).toEqual([inserted.tool!.name]);
+    expect(new Store(selection).messagesFor(bot.threadId).find((message) => message.id === inserted.id)?.tool?.name)
+      .toBe(inserted.tool?.name);
   });
 
   it("masks a key in bot text, tools and cards — but never in what the user typed", () => {

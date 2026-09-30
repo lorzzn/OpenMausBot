@@ -20,6 +20,7 @@ import type { Destination } from "./surface.ts";
 import { newId, type ModelSelection } from "./contracts.ts";
 import { pickBotName } from "./names.ts";
 import { redactSecretsInText } from "./redact.ts";
+import { boundedToolTitle } from "./tool-title.ts";
 import { botAvatarProfile } from "../shared/bot-avatar.ts";
 import { approvalModeFor, isApprovalMode } from "../shared/approval-mode.ts";
 import type { ProfileRequestChanges } from "../shared/profile-request.ts";
@@ -145,7 +146,7 @@ function redactBotAuthored<T extends Omit<Message, "id" | "at"> & { at?: number 
   if (typeof out.text === "string") out.text = redactSecretsInText(out.text);
   if (out.compaction) out.compaction = { ...out.compaction, summary: redactSecretsInText(out.compaction.summary) };
   if (out.tool?.name) {
-    out.tool = { ...out.tool, name: redactSecretsInText(out.tool.name) };
+    out.tool = { ...out.tool, name: boundedToolTitle(redactSecretsInText(out.tool.name)) };
     if (out.tool.summary) out.tool.summary = redactSecretsInText(out.tool.summary);
   }
   if (out.routineRun) {

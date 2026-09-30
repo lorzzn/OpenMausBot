@@ -8,6 +8,7 @@ import { writeFileAtomic } from "./atomic.ts";
 import { rm as removeDirectory } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { ToolResults, TOOL_RESULT_MAX_CHARS } from "./tool-results.ts";
+import { boundedToolTitle, publicTranscriptMessage } from "./tool-title.ts";
 import { extname, join } from "node:path";
 import { authorizeExternalRuntime, externalRuntimeIsActive, type ExternalRuntimeGrant } from "./external-runtime.ts";
 
@@ -3365,7 +3366,7 @@ const storedAvatarExists = (avatarUrl: string): boolean =>
 
 const publicBot = (bot: NonNullable<ReturnType<typeof store.bot>>) => ({
   ...wireBot(bot),
-  messages: store.messagesFor(bot.threadId),
+  messages: store.messagesFor(bot.threadId).map(publicTranscriptMessage),
   activeLeafId: store.activeLeaf(bot.threadId),
   tasks: store.tasks(bot.id).map(wireTask),
 });
@@ -4228,7 +4229,7 @@ function activeGroupTurnForBot(botId: string): { group: GroupRecord; threadId: s
 
 const groupWithThread = (group: GroupRecord) => ({
   ...publicGroupState(group),
-  messages: store.messagesFor(group.threadId),
+  messages: store.messagesFor(group.threadId).map(publicTranscriptMessage),
   activeLeafId: store.activeLeaf(group.threadId),
   ...(group.dm ? {} : { tasks: store.groupTasks(group.id) }),
 });
@@ -4247,10 +4248,10 @@ store.onChange((change) => {
       broadcast({ kind: "sections", sections: store.sections });
       break;
     case "message":
-      broadcast({ kind: "message", threadId: change.threadId, message: change.message });
+      broadcast({ kind: "message", threadId: change.threadId, message: publicTranscriptMessage(change.message) });
       break;
     case "message.patch":
-      broadcast({ kind: "message.patch", threadId: change.threadId, message: change.message });
+      broadcast({ kind: "message.patch", threadId: change.threadId, message: publicTranscriptMessage(change.message) });
       break;
     case "thread":
       broadcast({ kind: "thread", threadId: change.threadId, activeLeafId: change.activeLeafId });
@@ -4314,8 +4315,9 @@ function pageSize(raw: string | null): number | null | undefined {
 /** A screen message without its pixels. The client fetches those from
  * `/api/threads/:threadId/messages/:id/image` when it actually shows one. */
 function slimMessage(message: Message): Message | Record<string, unknown> {
-  if (message.kind !== "screen" || !message.png) return message;
-  const { png: _png, mime: _mime, ...rest } = message;
+  const projected = publicTranscriptMessage(message);
+  if (projected.kind !== "screen" || !projected.png) return projected;
+  const { png: _png, mime: _mime, ...rest } = projected;
   return { ...rest, hasImage: true };
 }
 
@@ -4327,7 +4329,7 @@ function slimMessage(message: Message): Message | Record<string, unknown> {
  * seek to an arbitrary point in history. */
 function messagePage(threadId: string, limit: number | undefined, before?: string | null) {
   if (limit === undefined) {
-    return { messages: store.messagesFor(threadId), activeLeafId: store.activeLeaf(threadId) };
+    return { messages: store.messagesFor(threadId).map(publicTranscriptMessage), activeLeafId: store.activeLeaf(threadId) };
   }
   if (!before) {
     const tail = store.messagesTail(threadId, limit);
@@ -5917,7 +5919,11 @@ bus.subscribe((event: RuntimeEvent) => {
   if (!privateImageEvent) {
     // Exact executable input is internal matching metadata, not inspector UI.
     // The event bus's persistence redactor does not scrub its live event.
-    const publicEvent = event.type === "request.opened" ? { ...event, command: undefined } : event;
+    const publicEvent = event.type === "request.opened"
+      ? { ...event, command: undefined }
+      : event.type === "item.started" && event.itemType === "tool"
+        ? { ...event, title: event.title === undefined ? undefined : boundedToolTitle(redactSecretsInText(event.title)), raw: undefined }
+        : event;
     broadcast({ kind: "runtime", event: publicEvent });
   }
   const routineRun = privateImageEvent ? null : (routines?.handleRuntimeEvent(event) ?? null);
@@ -6016,7 +6022,7 @@ bus.subscribe((event: RuntimeEvent) => {
         // ask_bot's raw tool chip is redundant — the internal endpoint
         // appends a richer "Messaged @X" chip linking to the channel
         if (event.title?.endsWith("__ask_bot")) break;
-        const name = event.title ?? "tool";
+        const name = boundedToolTitle(redactSecretsInText(event.title ?? "tool"));
         // narration is folded in here, once, so call mode can read the
         // chip aloud without re-deriving it — and so the phrase a user
         // hears and the chip they see can never drift apart
@@ -15852,7 +15858,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 400, { error: "single-bot events open that bot's chat directly" });
       }
       const group = ensureCalendarCallRoom(call);
-      return json(res, 200, { group: { ...publicGroupState(group), messages: store.messagesFor(group.threadId) } });
+      return json(res, 200, { group: { ...publicGroupState(group), messages: store.messagesFor(group.threadId).map(publicTranscriptMessage) } });
     }
     const calendarCallMatch = path.match(/^\/api\/calendar-calls\/([\w-]+)$/);
     if (calendarCallMatch && method === "PATCH") {
@@ -17654,7 +17660,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ...(warnings.length ? { warnings } : {}),
         bot: {
           ...wireBot(bot),
-          messages: store.messagesFor(bot.threadId),
+          messages: store.messagesFor(bot.threadId).map(publicTranscriptMessage),
           activeLeafId: store.activeLeaf(bot.threadId),
         },
       });
@@ -19507,7 +19513,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // the client showing the previous task's conversation.
     const botWithThread = (bot: NonNullable<ReturnType<typeof store.bot>>) => ({
       ...wireBot(bot),
-      messages: store.messagesFor(bot.threadId),
+      messages: store.messagesFor(bot.threadId).map(publicTranscriptMessage),
       activeLeafId: store.activeLeaf(bot.threadId),
       tasks: store.tasks(bot.id).map(wireTask),
     });
