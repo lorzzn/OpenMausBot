@@ -5,7 +5,7 @@ import { localVmViewerTarget, proxiedLocalVmViewerUrl } from "./local-vm-viewer.
 describe("Local VM same-origin viewer", () => {
   it("uses each request's origin for the page and target-specific WebSocket", () => {
     const raw = "http://127.0.0.1:6080/vnc.html#autoconnect=true&resize=scale&password=secret";
-    for (const origin of ["http://198.51.100.20:8080", "http://192.0.2.10:8080", "http://localhost:8080"]) {
+    for (const origin of ["http://198.51.100.20:8080", "http://192.0.2.10:8080", "http://localhost:8080", "https://bot.example.test"]) {
       const shared = new URL(proxiedLocalVmViewerUrl(raw, origin)!);
       expect(shared.origin).toBe(origin);
       expect(shared.pathname).toBe("/local-vm/shared/vnc.html");
@@ -15,7 +15,20 @@ describe("Local VM same-origin viewer", () => {
       const bot = new URL(proxiedLocalVmViewerUrl(raw, origin, "bot-123")!);
       expect(bot.pathname).toBe("/local-vm/bots/bot-123/vnc.html");
       expect(new URLSearchParams(bot.hash.slice(1)).get("path")).toBe("local-vm/bots/bot-123/websockify");
+
+      const pooled = new URL(proxiedLocalVmViewerUrl(raw, origin, undefined, 2)!);
+      expect(pooled.origin).toBe(origin);
+      expect(pooled.pathname).toBe("/local-vm/pool/2/vnc.html");
+      expect(new URLSearchParams(pooled.hash.slice(1)).get("path")).toBe("local-vm/pool/2/websockify");
     }
+  });
+
+  it("rejects ambiguous and invalid pool seats", () => {
+    const raw = "http://127.0.0.1:6080/vnc.html";
+    for (const seat of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, NaN]) {
+      expect(proxiedLocalVmViewerUrl(raw, "https://bot.example.test", undefined, seat)).toBeNull();
+    }
+    expect(proxiedLocalVmViewerUrl(raw, "https://bot.example.test", "bot-123", 0)).toBeNull();
   });
 
   it("only maps loopback noVNC pages and valid bot ids", () => {
@@ -28,6 +41,12 @@ describe("Local VM same-origin viewer", () => {
     expect(localVmViewerTarget("/local-vm/shared/vnc.html")).toEqual({});
     expect(localVmViewerTarget("/local-vm/bots/bot-123/app/ui.js?x=1")).toEqual({ botId: "bot-123" });
     expect(localVmViewerTarget("/local-vm/bots/bot-123/websockify")).toEqual({ botId: "bot-123" });
+    expect(localVmViewerTarget("/local-vm/pool/0/vnc.html")).toEqual({ poolSeat: 0 });
+    expect(localVmViewerTarget("/local-vm/pool/2/websockify")).toEqual({ poolSeat: 2 });
+    expect(localVmViewerTarget("/local-vm/pool/-1/vnc.html")).toBeNull();
+    expect(localVmViewerTarget("/local-vm/pool/01/vnc.html")).toBeNull();
+    expect(localVmViewerTarget("/local-vm/pool/9007199254740992/vnc.html")).toBeNull();
+    expect(localVmViewerTarget("/local-vm/pool/2/../secret")).toBeNull();
     expect(localVmViewerTarget("/local-vm/shared/../secret")).toBeNull();
     expect(localVmViewerTarget("/local-vm/bots/../app/ui.js")).toBeNull();
     expect(localVmViewerTarget("/api/health")).toBeNull();

@@ -16,3 +16,5 @@ RUN pnpm build:server && pnpm exec vite build
 FROM ${BASE_IMAGE}
 COPY --from=build --chown=maus:maus /src/dist-server /app/dist-server
 COPY --from=build --chown=maus:maus /src/dist /app/dist
+# Let the standalone server report the version of the code copied above.
+COPY --from=build --chown=maus:maus /src/package.json /app/package.json

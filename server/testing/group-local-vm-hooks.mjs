@@ -28,12 +28,14 @@ registerHooks({
       }
       export async function containerComputerStatus(_run, _platform, target = SHARED_LOCAL_VM_TARGET) {
         writeFileSync(file + '.entered', target.key);
-        while (read().blocked) await new Promise(r => setTimeout(r, 30));
+        while (read().blocked || read().blockedTarget === target.key) await new Promise(r => setTimeout(r, 30));
         const missing = !(await containerComputerExists('podman', target));
         const ready = !missing && !read().failed;
+        const viewerPort = target.key.startsWith('pool:') ? 6500 + Number(target.key.slice(5)) : 6080;
         return { runtime: 'podman', daemonUp: true, image: true, create_supported: true, managed: !missing,
           container: missing ? 'missing' : 'running', ready, problem: ready ? null : 'fixture desktop unavailable',
-          container_name: target.containerName, target_key: target.key, workspace_path: target.workspaceDir };
+          container_name: target.containerName, target_key: target.key, workspace_path: target.workspaceDir,
+          viewer_port: viewerPort, viewer_url: 'http://127.0.0.1:' + viewerPort + '/vnc.html#autoconnect=true' };
       }
       export async function containerComputerAction(action, _run, _platform, target = SHARED_LOCAL_VM_TARGET) {
         const state = read();

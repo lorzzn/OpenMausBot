@@ -18,7 +18,7 @@ import { DroidAgentDriver } from "./droid.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
 import { HermesAgentDriver } from "./hermes.ts";
 import { KimiAgentDriver } from "./kimi.ts";
-import { createOpenCodeDriver } from "./opencode-go.ts";
+import { createOpenCodeDriver, openCodeOwnedDirectories } from "./opencode-go.ts";
 import { QwenAgentDriver } from "./qwen.ts";
 
 const FAKE_CLI = join(dirname(fileURLToPath(import.meta.url)), "../../testing/fake-acp-cli.ts");
@@ -72,11 +72,10 @@ describe("remaining ACP approval mappings", () => {
     const recorder = recordEvents(instance.adapter);
     const pidOf = () => JSON.parse(readFileSync(dump, "utf8")).pid as number;
     try {
-      // The residual request reaches the user at every level, including the
-      // ones an engine claims natively. Full is unsupported on most rows here
-      // and must stay interactive even though the instance stored
-      // fullAuto=true; where Full is supported the flag tracks the turn's own
-      // mode, so the legacy instance value still cannot outrank Ask or Auto.
+      // The adapter emits residual requests at every level, including native
+      // modes. The server's Full access handler approves them. Native settings
+      // track the turn's own mode, so the legacy instance fullAuto value still
+      // cannot outrank Ask or Auto.
       for (const approvalMode of ["full", "auto", "ask"] as const) {
         const pidBefore = existsSync(dump) ? pidOf() : null;
         const methodsBefore = existsSync(rpcDump) ? (JSON.parse(readFileSync(rpcDump, "utf8")) as string[]).length : 0;
@@ -97,9 +96,13 @@ describe("remaining ACP approval mappings", () => {
           expect(JSON.parse(readFileSync(dump, "utf8")).argv).toEqual([...argv, ...(native?.[approvalMode] ?? [])]);
           if (driver === OpenCodeDriver) {
             const permission = JSON.parse(JSON.parse(readFileSync(dump, "utf8")).env.OPENCODE_PERMISSION);
-            expect(permission).toMatchObject({ external_directory: approvalMode === "full" ? "allow" : "ask" });
-            if (approvalMode === "full") expect(permission).toMatchObject({ "*": "allow", read: "allow", bash: "allow", edit: "allow" });
-            else expect(permission).toEqual({ external_directory: "ask" });
+            if (approvalMode === "full") expect(permission).toMatchObject({ "*": "allow", external_directory: "allow", read: "allow", bash: "allow", edit: "allow" });
+            // the person's own rule stays in force; only the folders OpenMaus
+            // owns (attachments here: this turn names no bot) are allowed
+            else expect(permission).toEqual({ external_directory: {
+              "*": "ask",
+              ...Object.fromEntries(openCodeOwnedDirectories().flatMap((directory) => [[directory, "allow"], [join(directory, "*"), "allow"]])),
+            } });
           }
         }
         // Agent processes are pooled per spawn contract: a turn whose mode
@@ -120,9 +123,9 @@ describe("remaining ACP approval mappings", () => {
         }
         if (driver === DroidAgentDriver) {
           const settings = JSON.parse(readFileSync(`${dump}.config.json`, "utf8"));
-          expect(settings[0]).toEqual({
+          expect(settings.filter((setting: { method: string }) => setting.method === "session/set_mode").at(-1)).toEqual({
             method: "session/set_mode",
-            params: { sessionId: "fake-acp-session", modeId: "normal" },
+            params: { sessionId: "fake-acp-session", modeId: approvalMode === "full" ? "auto-high" : "normal" },
           });
         }
         expect(await instance.adapter.respondToRequest("approval-matrix-thread", opened.requestId!, { behavior: "deny" }))

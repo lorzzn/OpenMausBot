@@ -74,8 +74,10 @@ Use the same isolated launcher. In its temporary data directory create a
 `server/testing/fake-cursor-login-cli.ts`. Add a `cursorAgent` instance to only
 that fixture's `config.json`, with `HOME` set to `cursor-home` and
 `OMB_CURSOR_AUTH_FIXTURE=1`. Keep the default CLI so the persisted native shim
-is selected. Reload only this fixture's providers (a PATCH to `/api/config`
-with the fixture's existing `defaultModelSelection` will do this).
+is selected. Refresh the fixture's in-memory config with a PATCH to
+`/api/config` containing its existing `defaultModelSelection`, then PATCH
+`/api/instances/cursor` with `{ "cli": "" }` to reload that instance. Refresh
+the engine statuses before opening the card.
 
 Open the actual Settings → Engines → Cursor card. Connect shows an official
 Cursor challenge link and Cancel, with no callback input or device-code field.
@@ -90,6 +92,10 @@ selected after reloading the fixture providers. The update notice must disappear
 immediately after the version changes, and CLI path and updates must retain
 the manual update button. None of this proves a real
 Cursor account login or downloads a real update.
+
+The persisted-shim regression in `server/drivers/acp/cursor.test.ts` uses a
+separate temporary HOME with the default CLI name. It checks that availability,
+authentication and update probes resolve the same native shim as turns do.
 
 ## Cursor first installation from the panel
 

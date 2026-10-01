@@ -1,6 +1,6 @@
 (omb_routes) {
 	encode zstd gzip
-	@local_vm path_regexp vm ^/local-vm/(?:shared|bots/[\w-]+)(/.*)$
+	@local_vm path_regexp vm ^/local-vm/(?:shared|bots/[\w-]+|pool/\d+)(/.*)$
 	handle @local_vm {
 		route {
 			request_header -X-OpenMausBot-Viewer-Port

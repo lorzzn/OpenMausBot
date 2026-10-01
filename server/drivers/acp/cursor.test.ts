@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, readFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -133,6 +133,25 @@ describe("CursorAgentDriver", () => {
       win32: expect.stringContaining("cursor.com/install"),
     });
     expect(CursorAgentDriver.install?.signInCommand).toBe("cursor-agent login");
+  });
+
+  it.skipIf(process.platform === "win32")("detects a persisted native shim in the instance HOME without a PATH installation", async () => {
+    const home = mkdtempSync(join(tmpdir(), "omb-cursor-shim-"));
+    const fake = join(dirname(FAKE_CLI), "fake-cursor-login-cli.ts");
+    mkdirSync(join(home, ".local", "bin"), { recursive: true });
+    symlinkSync(fake, join(home, ".local", "bin", "cursor-agent"));
+    const instance = await CursorAgentDriver.create({
+      instanceId: "cursor-native-shim", displayName: "Cursor", enabled: true,
+      environment: { HOME: home, OMB_CURSOR_AUTH_FIXTURE: "1" },
+      config: { cli: "cursor-agent", fullAuto: false },
+    });
+    try {
+      expect(await instance.snapshot()).toMatchObject({ state: "available", version: "2026.09.28-offline", authenticated: false,
+        update: { title: "Update Cursor to 2026.09.30-offline" } });
+    } finally {
+      await instance.dispose();
+      await removeTempDir(home);
+    }
   });
 
   it("refreshes the catalog from `cursor-agent models` on the instance CLI", async () => {
