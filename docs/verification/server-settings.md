@@ -7,6 +7,7 @@ domain, or configuration to verify these controls.
 
 ```sh
 pnpm exec vitest run server/custom-domain.test.ts server/provider-auth-sessions.test.ts server/drivers/codex-device-auth.test.ts server/request-auth.test.ts server/config.test.ts src/components/CodexDeviceSignIn.test.ts src/components/CustomDomainSettings.test.ts src/components/EngineSetup.test.ts src/components/EnginesSettings.test.ts
+pnpm exec vitest run server/drivers/cursor-install.test.ts server/drivers/cursor-auth.test.ts server/drivers/cursor-release.test.ts server/drivers/acp/cursor.test.ts src/components/CursorSignIn.test.ts
 pnpm typecheck
 pnpm build
 pnpm build:server
@@ -65,3 +66,41 @@ not prove a customer's real DNS, certificate, or reverse proxy is configured.
 For deployment acceptance, separately test an actual public domain and an
 owner-initiated real provider sign-in. A green offline run must not be reported
 as a real OpenAI account login or proof of public DNS/TLS reachability.
+
+## Cursor browser sign-in and native updates
+
+Use the same isolated launcher. In its temporary data directory create a
+`cursor-home/.local/bin/cursor-agent` symlink to the absolute path of
+`server/testing/fake-cursor-login-cli.ts`. Add a `cursorAgent` instance to only
+that fixture's `config.json`, with `HOME` set to `cursor-home` and
+`OMB_CURSOR_AUTH_FIXTURE=1`. Keep the default CLI so the persisted native shim
+is selected. Reload only this fixture's providers (a PATCH to `/api/config`
+with the fixture's existing `defaultModelSelection` will do this).
+
+Open the actual Settings → Engines → Cursor card. Connect shows an official
+Cursor challenge link and Cancel, with no callback input or device-code field.
+The same card must show **Update Cursor to 2026.09.30-offline** automatically,
+without clicking Check again. The notice uses the existing server update
+button and must not display the private email from the native `about` payload.
+**Do not open the fake link at Cursor.** Cancel, start again, and create the
+empty `.omb-fake-cursor-login-approved` marker in `cursor-home`. The card must
+move to Ready after polling. Update from the notice; the fake
+version must change from `2026.09.28-offline` to `2026.09.30-offline` and remain
+selected after reloading the fixture providers. The update notice must disappear
+immediately after the version changes, and CLI path and updates must retain
+the manual update button. None of this proves a real
+Cursor account login or downloads a real update.
+
+## Cursor first installation from the panel
+
+Keep the fixture's isolated home empty, and run the fixture in an image with no
+Cursor CLI on PATH (the `before-cursor` local verification image is suitable).
+Add a default `cursorAgent` instance only to this disposable config. The real
+Settings card must offer **Install Cursor on this server**. Before clicking,
+refresh the page and verify that no Cursor download or installation occurs.
+Click Install: verify that the version is available and **Connect Cursor**
+replaces the install control without restarting the fixture. This acceptance
+step intentionally downloads the public official package, never signs into a
+real account, and must use an isolated home or disposable Docker volume.
+Recreate that fixture container with the same disposable home and verify the
+installation persists. Remove only that fixture container and its own volume.

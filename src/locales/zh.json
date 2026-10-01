@@ -1398,5 +1398,18 @@
   "botAccess.grants.verb.modify": "修改",
   "botAccess.grants.verb.delete": "删除",
   "connectors.grants.limited": "工具受限的机器人：{count}",
-  "connectors.grants.more": " +{count} 个"
+  "connectors.grants.more": " +{count} 个",
+  "engineSetup.cursor.description": "在浏览器中授权此服务器使用你的 Cursor 账号，无需终端或本地回调。",
+  "engineSetup.cursor.start": "连接 Cursor",
+  "engineSetup.cursor.starting": "正在准备 Cursor 登录…",
+  "engineSetup.cursor.open": "打开 Cursor 登录页",
+  "engineSetup.cursor.waiting": "等待你完成 Cursor 授权…",
+  "engineSetup.cursor.security": "在 Cursor 官方网站登录，授权后自动确认，登录凭据保存在此服务器。",
+  "engineSetup.cursor.connected": "Cursor 已连接，正在刷新模型。",
+  "engineSetup.cursor.cancelled": "Cursor 登录已取消，可以重新开始。",
+  "engineSetup.cursor.expired": "Cursor 登录已过期，请重新生成登录链接。",
+  "engineSetup.cursor.failed": "Cursor 登录未完成，请检查服务器网络后重试。",
+  "engineSetup.cursor.invalidLink": "Cursor 未返回有效登录链接，请取消后重试。",
+  "engineSetup.serverUpdating": "正在检查并更新…",
+  "engineSetup.serverUpdated": "已完成更新检查，并刷新引擎状态。"
 }

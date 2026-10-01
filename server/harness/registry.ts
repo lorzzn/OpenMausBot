@@ -31,7 +31,8 @@ export type RegistryEntry =
   | { instanceId: InstanceId; live?: undefined; shadow: ShadowInstance };
 
 /** The driver's install descriptor plus what this machine can do about it. */
-function withServerInstall(install: AnyProviderDriver["install"], npmPresent: boolean): AnyProviderDriver["install"] {
+function withServerInstall(install: AnyProviderDriver["install"], npmPresent: boolean, nativeUpdate = false, nativeInstall = false): AnyProviderDriver["install"] {
+  if (install && nativeUpdate) return { ...install, server: { updateOnly: !nativeInstall } };
   const server = install ? serverInstallFor(install, npmPresent) : null;
   return server ? { ...install, server } : install;
 }
@@ -155,14 +156,18 @@ export class ProviderRegistry {
     return true;
   }
 
-  /** A driver's own installer (a managed download) first; otherwise the
-   * app's npm prefix, when the driver's install one-liner is an npm package
-   * and npm is on PATH. False means Settings has nothing to offer here. */
+  /** A driver's managed installer or native updater first; otherwise the
+   * app's npm prefix when the one-liner names an npm package.
+   * False means Settings has nothing to offer here. */
   async installRuntime(instanceId: InstanceId): Promise<boolean> {
     const entry = this.byId.get(instanceId);
     if (!entry) return false;
     if (entry.live?.installRuntime) {
       await entry.live.installRuntime();
+      return true;
+    }
+    if (entry.live?.updateRuntime) {
+      await entry.live.updateRuntime();
       return true;
     }
     const driver = this.driversByKind.get(entry.shadow?.driverKind ?? entry.live!.driverKind);
@@ -260,14 +265,14 @@ export class ProviderRegistry {
             approvalReview: inst.reviewPermission !== undefined,
           },
           access: driver?.metadata.access ?? "subscription",
-          install: withServerInstall(driver?.install, npmPresent),
+          install: withServerInstall(driver?.install, npmPresent, inst.updateRuntime !== undefined, inst.installRuntime !== undefined),
           authentication: inst.startAuthentication
             ? {
-                method: inst.getAuthentication && inst.completeAuthentication
+                method: inst.authenticationMethod ?? (inst.getAuthentication && inst.completeAuthentication
                   ? "paste-code" as const // a link to open, then a code pasted back (Claude)
                   : inst.getAuthentication
                     ? "device-code" as const // a code to enter at the provider's page (Codex)
-                    : "browser" as const, // a link and a callback URL (managed engines)
+                    : "browser" as const), // a link and a callback URL (managed engines)
                 // the browser may remove the stored sign-in to switch accounts
                 signOut: inst.signOut !== undefined,
               }

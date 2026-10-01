@@ -10,7 +10,6 @@ import { codexToolSurfaceArgs } from "./codex-tool-surface.ts";
 //
 // resumeCursor is the codex thread id; a later turn tries thread/resume
 // and preserves that history or reports a failed resume.
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { codexConfigMcpServerNames, mountedMcpServerName } from "./codex-mcp-names.ts";
 
@@ -32,7 +31,7 @@ import type {
 import { newEventId, newId } from "../contracts.ts";
 import { decodeCodexSelection, readCodexModelCatalog, STATIC_CODEX_MODELS } from "./codex-catalog.ts";
 import { codexLocalProviderArgs } from "./local-inject.ts";
-import { augmentedPath, splitCliString } from "../env-path.ts";
+import { augmentedPath } from "../env-path.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
 import { appendNative } from "./native.ts";
 import { permissionCommand, permissionLaunchCwd } from "./permission-command.ts";
@@ -46,6 +45,7 @@ import { classifyResumeFailure, mayReplay, recoveryPromptFor } from "../resume-r
 import { extractMcpImages } from "../mcp-tool-images.ts";
 import { parseProtocolAskQuestions, questionAnswersById, questionChoices } from "../../shared/ask-question.ts";
 import { codexVersionBehind, readLatestCodexRelease } from "./codex-release.ts";
+import { cliUpdateCommand } from "./cli-update-command.ts";
 
 export { decodeCodexSelection, readCodexModelCatalog, STATIC_CODEX_MODELS } from "./codex-catalog.ts";
 
@@ -72,19 +72,7 @@ function missingNativeCodexThread(error: unknown, cursor: string): boolean {
  * selected a non-PATH Codex: installing a second global copy would leave
  * OpenMausBot pointing at the old binary. */
 export function codexUpdateCommand(cli: string, platform: NodeJS.Platform = process.platform): string {
-  if (cli === "codex") return "codex update";
-  const trimmed = cli.trim();
-  // Match resolveCliSpawn's one tokenizer pass, including its exception for
-  // real unquoted paths containing spaces. A wrapper's fixed arguments must
-  // precede `update`, just as they precede `app-server` and `--version`.
-  const tokens = trimmed.includes(" ") && existsSync(trimmed)
-    ? [trimmed]
-    : splitCliString(trimmed);
-  const quote = platform === "win32"
-    ? (token: string) => `'${token.replaceAll("'", "''")}'`
-    : (token: string) => `'${token.replaceAll("'", `'\\''`)}'`;
-  const command = (tokens.length > 0 ? tokens : [trimmed]).map(quote).join(" ");
-  return platform === "win32" ? `& ${command} update` : `${command} update`;
+  return cliUpdateCommand(cli, "codex", platform);
 }
 
 async function codexReleaseUpdate(version: string, cli: string): Promise<ProviderSnapshot["update"] | undefined> {

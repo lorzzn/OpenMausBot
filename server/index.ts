@@ -20336,6 +20336,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       } finally { providerConfigBusy = false; }
     }
 
+    const busyProviderSelections = () => store.bots.flatMap((bot) => {
+      const busyTasks = store.tasks(bot.id).filter((task) => threadBusy(bot.id, task.threadId));
+      const selections = busyTasks.map((task) => botForThread(bot.id, task.threadId)!.modelSelection);
+      // Rooms still run from the profile default; direct threads do not.
+      if (activeGroupTurnForBot(bot.id) || (bot.busy && busyTasks.length === 0)) selections.push(bot.modelSelection);
+      return selections;
+    });
     const authStatus = /^\/api\/instances\/([\w.-]+)\/auth\/status$/.exec(path);
     if (method === "GET" && authStatus) {
       res.setHeader("cache-control", "no-store");
@@ -20357,6 +20364,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 200, { instances: await describeInstances() });
         }
         if (action === "install") {
+          const instance = registry.get(instanceId);
+          if (instance?.updateRuntime) {
+            // Native Cursor copies share a user-home installation. Reserve
+            // the driver during installation or updates so no new turn races it.
+            const siblings = registry.instances().filter((other) => other.driverKind === instance.driverKind);
+            if (providerConfigBusy || siblings.some((other) => providerInstancesChanging.has(other.instanceId))) {
+              return json(res, 409, { error: "This engine is already being installed or updated." });
+            }
+            const ids = new Set(siblings.map((other) => other.instanceId));
+            if (busyProviderSelections().some((selection) => ids.has(selection.instanceId))) {
+              return json(res, 409, { error: "Wait for running Cursor tasks to finish before updating." });
+            }
+            for (const id of ids) providerInstancesChanging.add(id);
+            try {
+              await registry.installRuntime(instanceId);
+              for (const other of siblings) await other.adapter.stopAll();
+              return json(res, 200, { instances: await describeInstances() });
+            } finally { for (const id of ids) providerInstancesChanging.delete(id); }
+          }
           if (!(await registry.installRuntime(instanceId))) return json(res, 404, { error: "Installing this engine from Settings is not available on this server. Use the install command on the machine running OpenMausBot." });
           return json(res, 200, { instances: await describeInstances() });
         }
@@ -20434,13 +20460,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // executable already configured for this Claude instance. The JSON gate
     // keeps a hostile page from triggering a local process with a simple
     // cross-origin form request.
-    const busyProviderSelections = () => store.bots.flatMap((bot) => {
-      const busyTasks = store.tasks(bot.id).filter((task) => threadBusy(bot.id, task.threadId));
-      const selections = busyTasks.map((task) => botForThread(bot.id, task.threadId)!.modelSelection);
-      // Rooms still run from the profile default; a direct thread does not.
-      if (activeGroupTurnForBot(bot.id) || (bot.busy && busyTasks.length === 0)) selections.push(bot.modelSelection);
-      return selections;
-    });
     const claudeUpdate = /^\/api\/instances\/([\w.-]+)\/claude-update$/.exec(path);
     if (method === "POST" && claudeUpdate) {
       if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {

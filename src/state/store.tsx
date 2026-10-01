@@ -727,7 +727,7 @@ export interface EngineInstall {
   needsNode?: boolean;
   managed?: { label: string; downloadBytes: number };
   /** the server can install or update this engine itself, no terminal */
-  server?: { package: string };
+  server?: { package?: string; updateOnly?: boolean };
 }
 
 /** One row of GET /api/instances — the model picker's data. */
@@ -785,7 +785,7 @@ export interface InstanceInfo {
   /** `custom` agents sit below the rail divider — no subscription catalog. */
   access?: "subscription" | "custom" | "api";
   /** `signOut`: the browser may remove the stored sign-in to switch accounts. */
-  authentication?: { method: "device-code" | "paste-code" | "browser"; signOut?: boolean };
+  authentication?: { method: "device-code" | "paste-code" | "browser" | "browser-poll"; signOut?: boolean };
   install?: EngineInstall;
   /** Configured CLI path override — set ONLY when the user overrode it;
    * absent means the driver default is in effect. */

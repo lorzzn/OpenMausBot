@@ -12,7 +12,7 @@ import { EngineCard, EngineSections, RefreshEngines, engineReady } from "./Engin
 import { ProviderIconPicker } from "./ProviderIconPicker";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { EngineSetup, EngineUpdateNotice, EngineWarningNotice } from "./EngineSetup";
+import { EngineSetup, EngineUpdateNotice, EngineWarningNotice, ServerEngineInstall } from "./EngineSetup";
 import { AddClaudeAccount, ClaudeAccountSettings } from "./ClaudeAccountSettings";
 import { CodexAccountSettings } from "./CodexAccountSettings";
 
@@ -327,6 +327,9 @@ function EngineRow({ instance }: { instance: InstanceInfo }) {
         </div>
         {updatedVersion && (
           <div role="status" className="mt-1 text-[12px] text-success">{t("engines.claudeUpdated", { version: updatedVersion })}</div>
+        )}
+        {instance.install?.server?.updateOnly !== undefined && instance.snapshot.state === "available" && !instance.snapshot.update && (
+          <ServerEngineInstall instance={instance} mode="update" command="cursor-agent update" />
         )}
         {error && <div role="alert" className="mt-1 text-[12px] text-danger">{error}</div>}
         {open && (

@@ -11,6 +11,25 @@ key.
 
 ## Setup
 
+Docker images built from this repository install Cursor on demand. Open
+**Settings → Engines → Cursor → Install Cursor on this server**, then
+**Connect Cursor** for browser authorization. The panel resolves the current
+package from Cursor's official installer and activates it only after extraction
+and a version check. Installations, updates and credentials use the persistent
+`/data` home. Neither image builds nor container startup download Cursor.
+See [local Docker deployment](../deploy/local/README.md) for the optional
+terminal command. Existing installations and explicit CLI overrides are kept.
+
+Cursor also uses the normal engine status checks on page load, window focus,
+and **Check again** to detect updates. Like Codex, successful release checks
+are cached for one hour; failed checks retry after five minutes without
+disabling the engine. The native read-only `cursor-agent about --format json`
+query follows that Cursor home's configured release channel. When a new
+version is found, the existing engine update notice offers the server update
+button. A changed installed version or CLI path invalidates the cached result.
+
+For an installation outside those Docker images:
+
 1. Install Cursor CLI:
 
    ```sh
@@ -19,14 +38,29 @@ key.
 
    Windows (native): `irm 'https://cursor.com/install?win32=true' | iex`
 
-2. Sign in with `cursor-agent login`, or set `CURSOR_API_KEY` / `CURSOR_AUTH_TOKEN`
-   in the environment of the Cursor instance.
+2. Open **Settings → Engines → Cursor → Connect Cursor**, follow the official
+   browser authorization link, and return to the page. The server polls for
+   completion; no localhost callback or pasted code is needed. Alternatively,
+   run `cursor-agent login`, or set `CURSOR_API_KEY` / `CURSOR_AUTH_TOKEN` in the
+   environment of the Cursor instance.
 
 3. Confirm `cursor-agent --version` works. The binary installs to `~/.local/bin` by
    default; OpenMausBot already looks there when launched from a GUI.
 
 The engine stays unavailable until the `cursor-agent` executable is on PATH. A
 missing login shows as unauthenticated rather than crashing the fleet.
+
+## Updates from Settings
+
+Expand **CLI path and updates** and choose **Update Cursor on this server**.
+OpenMausBot runs only the fixed native `cursor-agent update` command, with a
+deadline, and refreshes the version and model catalog after success. Active
+Cursor tasks must finish before updating; other engines continue running.
+The native updater uses its configured release channel and writes into the
+server user's `~/.local` directory. All Cursor probes and ACP sessions prefer
+that updated shim over a system installation. Docker maps HOME to `/data`, so
+updates and credentials survive container recreation. Explicit CLI overrides
+remain pinned and do not offer this update button.
 
 ## Models
 

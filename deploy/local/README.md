@@ -12,6 +12,37 @@ The `.env` file is ignored by Git. Shell environment variables take precedence.
 Internal service ports remain fixed inside the shared network namespace.
 `ENGINES` selects space-separated npm packages; an empty value skips installation.
 
+Cursor is installed on demand from **Settings → Engines → Cursor → Install
+Cursor on this server**. Building or starting the Docker image does not download
+Cursor. The panel downloads the version currently advertised by Cursor's
+official installer, validates its executable, and stores it under
+`/data/.local/share/cursor-agent` with a `cursor-agent` shim in `/data/.local/bin`.
+Installation needs neither a container rebuild nor a restart, and does not
+replace a generic `agent` command belonging to another engine.
+
+Then choose **Connect Cursor**. Open
+the official authorization link and sign in; the page confirms completion and
+refreshes models automatically. This works from a remote browser without a
+localhost callback or a terminal. To use the terminal instead:
+
+```sh
+docker compose exec -e NO_OPEN_BROWSER=1 omb cursor-agent login
+```
+
+Open the printed login URL in your browser and finish the Cursor account login.
+The credentials stay in the persistent `/data` home across container recreation.
+Normal engine status checks also detect new versions and display the same
+update notice used by other engines. Release checks are cached for one hour;
+failed checks retry after five minutes. Use the notice's update button, or
+**CLI path and updates → Update Cursor on this server**, to run the native
+`cursor-agent update` command. It follows Cursor's configured release channel;
+new versions and their shim are written under `/data/.local` and persist across
+container recreation. Running
+Cursor tasks must finish first. An explicit custom CLI path stays pinned; reset
+that override to use page installation and updates.
+An instance can also use `CURSOR_API_KEY` or `CURSOR_AUTH_TOKEN`; see
+[Cursor setup](../../docs/cursor.md).
+
 For Tailscale Serve, set `OMB_PUBLIC_URL` to your HTTPS URL and
 `OMB_HTTPS_HOST` to its hostname without scheme or path. Configure Tailscale
 Serve on the host to forward to the chosen localhost HTTP port.

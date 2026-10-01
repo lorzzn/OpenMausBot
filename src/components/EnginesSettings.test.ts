@@ -126,6 +126,26 @@ describe("Settings → Engines → setup cards", () => {
     expect(renderToStaticMarkup(createElement(EnginesSettings))).not.toContain("data-engine-warning-notice");
   });
 
+  it("shows Cursor's automatic update notice with one server update button, then retains manual updates", () => {
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("navigator", { userAgent: "Linux" });
+    fixture.bots = [];
+    fixture.instances = [{
+      instanceId: "cursor", displayName: "Cursor", driverKind: "cursorAgent", cliDefault: "cursor-agent",
+      snapshot: { state: "available", authenticated: true, version: "2026.09.28-offline",
+        update: { title: "Update Cursor to 2026.09.30-offline", message: "A newer Cursor CLI is available.", command: "cursor-agent update" } },
+      models: { default: "auto", options: [] }, install: { server: { updateOnly: false } },
+    }];
+    const html = renderToStaticMarkup(createElement(EnginesSettings));
+    expect(html).toContain("data-engine-update-notice");
+    expect(html).toContain("Update Cursor to 2026.09.30-offline");
+    expect(html.match(/Update Cursor on this server/g)).toHaveLength(1);
+    delete fixture.instances[0].snapshot.update;
+    const updated = renderToStaticMarkup(createElement(EnginesSettings));
+    expect(updated).not.toContain("data-engine-update-notice");
+    expect(updated).toContain("Update Cursor on this server");
+  });
+
   it("exposes managed Antigravity setup and keeps custom engines free of cloud sign-in", () => {
     vi.stubGlobal("window", {});
     vi.stubGlobal("navigator", { userAgent: "Linux" });

@@ -2712,5 +2712,18 @@
   "botAccess.grants.verb.modify": "Modify",
   "botAccess.grants.verb.delete": "Delete",
   "connectors.grants.limited": "Bots with limited tools: {count}",
-  "connectors.grants.more": " +{count} more"
+  "connectors.grants.more": " +{count} more",
+  "engineSetup.cursor.description": "Connect this server to your Cursor account in your browser. No terminal or local callback is needed.",
+  "engineSetup.cursor.start": "Connect Cursor",
+  "engineSetup.cursor.starting": "Preparing Cursor sign-in…",
+  "engineSetup.cursor.open": "Open Cursor sign-in",
+  "engineSetup.cursor.waiting": "Waiting for you to authorize Cursor…",
+  "engineSetup.cursor.security": "Sign in on Cursor’s official website. Authorization is confirmed automatically; credentials stay on this server.",
+  "engineSetup.cursor.connected": "Cursor connected. Your models are being refreshed.",
+  "engineSetup.cursor.cancelled": "Cursor sign-in cancelled. You can start again.",
+  "engineSetup.cursor.expired": "Cursor sign-in expired. Start again for a new link.",
+  "engineSetup.cursor.failed": "Cursor sign-in could not be completed. Check the server connection and try again.",
+  "engineSetup.cursor.invalidLink": "Cursor did not return a valid sign-in link. Cancel and try again.",
+  "engineSetup.serverUpdating": "Checking for updates and updating…",
+  "engineSetup.serverUpdated": "Update check completed. Engine status refreshed."
 }

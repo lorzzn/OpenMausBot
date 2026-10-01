@@ -232,7 +232,9 @@ process.exit(0);
   });
   function addFakeNpm(binDir: string) {
     const npm = join(binDir, "npm");
-    writeFileSync(npm, FAKE_NPM, { mode: 0o755 });
+    // This fixture empties PATH; use the Node that launched the test rather
+    // than relying on a second Node installation under /usr/local/bin.
+    writeFileSync(npm, FAKE_NPM.replace("#!/usr/bin/env node", `#!${process.execPath}`), { mode: 0o755 });
     chmodSync(npm, 0o755);
     resetPathCacheForTests();
   }

@@ -420,9 +420,10 @@ export interface EngineInstall {
   };
   /** Settings can install or update this engine on the machine running the
    * server, as the server's own user, into a directory the app owns. Set by
-   * the registry when the install one-liner is an npm package and npm is on
-   * PATH; never something a client chooses. */
-  server?: { package: string };
+   * the registry for npm installs or native maintenance. `updateOnly: true`
+   * needs an existing CLI; false includes initial installation as well.
+   * Never a command or package chosen by a client. */
+  server?: { package?: string; updateOnly?: boolean };
 }
 
 export interface ProviderAuthenticationStart {
@@ -512,6 +513,10 @@ export interface ProviderInstance {
   readonly refreshModels?: () => Promise<void>;
   /** Optional first-party runtime installation and account setup. */
   readonly installRuntime?: () => Promise<void>;
+  /** Update an existing first-party CLI with its fixed native update command. */
+  readonly updateRuntime?: () => Promise<void>;
+  /** Explicit method when the provider polls a browser authorization link. */
+  readonly authenticationMethod?: "browser-poll";
   readonly startAuthentication?: () => Promise<ProviderAuthenticationStart>;
   readonly getAuthentication?: (flowId: string) => Promise<ProviderAuthenticationStatus>;
   readonly completeAuthentication?: (flowId: string, callbackUrl: string) => Promise<void>;

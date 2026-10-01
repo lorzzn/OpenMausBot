@@ -11,6 +11,11 @@
 import type { ModelCatalog, ProviderErrorCode } from "../../contracts.ts";
 import { titleCaseModelId } from "../../contracts.ts";
 import { execCli } from "../../procs.ts";
+import { augmentedPath, resetPathCache } from "../../env-path.ts";
+import { PROVIDER_CREDENTIAL_ENV, WORKSPACE_CREDENTIAL_ENV, stripControlPlaneEnv } from "../../config.ts";
+import { CursorAuthController, resolveCursorCli } from "../cursor-auth.ts";
+import { createCursorReleaseReader, cursorReleaseUpdate } from "../cursor-release.ts";
+import { cursorManagedInstallAvailable, installCursorRuntime } from "../cursor-install.ts";
 import { createAcpDriver, type AcpSupport } from "./core.ts";
 
 /** Translate an argv `--model` slug into the id this ACP session will accept.
@@ -334,7 +339,7 @@ const support = (run: typeof execCli): AcpSupport => ({
   // Cursor's compatibility alias is unambiguous and ships with the same CLI.
   defaultCli: "cursor-agent",
   nativeSource: "cursor.acp",
-  loginNote: "Cursor CLI is not signed in — run `cursor-agent login` in a terminal, or set CURSOR_API_KEY",
+  loginNote: "Cursor CLI is not signed in — connect Cursor in Settings → Engines, or set CURSOR_API_KEY",
 
   install: {
     command: {
@@ -356,14 +361,21 @@ const support = (run: typeof execCli): AcpSupport => ({
   ],
   credentialEnv: ["CURSOR_API_KEY", "CURSOR_AUTH_TOKEN"],
 
-  resolveModels: (environment, config) => fetchCursorModels(config.cli || "cursor-agent", environment, run),
+  resolveCommand: async (environment, config) => ({ command: resolveCursorCli(config.cli, environment) }),
+  resolveModels: (environment, config) => fetchCursorModels(resolveCursorCli(config.cli, environment), environment, run),
+  async snapshot(environment, config) {
+    const cli = resolveCursorCli(config.cli, environment);
+    const version = (await execText(run, cli, ["--version"], environment))?.trim();
+    if (!version) return { state: "unavailable", reason: `\`${cli}\` CLI not found` };
+    return { state: "available", version, authenticated: await probeCursorAuth(cli, environment, run) };
+  },
 
   // Prefer the advertised ACP method. An already-signed-in CLI should accept
   // cursor_login without a browser; a missing method rides the ambient login
   // (CURSOR_API_KEY / `cursor-agent login`) instead of failing the turn.
   pickAuthMethod: (methods) => (methods.some((m) => m.id === "cursor_login") ? "cursor_login" : null),
   authFailure: "continue",
-  isAuthenticated: (env, config) => probeCursorAuth(config.cli || "cursor-agent", env, run),
+  isAuthenticated: (env, config) => probeCursorAuth(resolveCursorCli(config.cli, env), env, run),
   classifyError: classifyCursorError,
 
   async configureSession({ request, sessionId, turn, sessionModels }) {
@@ -389,8 +401,70 @@ const support = (run: typeof execCli): AcpSupport => ({
   buildPromptText: (turn) => (turn.system ? `${turn.system}\n\n${turn.text}` : turn.text),
 });
 
-export function createCursorAgentDriver(run: typeof execCli = execCli) {
-  return createAcpDriver(support(run));
+export function createCursorAgentDriver(run: typeof execCli = execCli, installer = installCursorRuntime) {
+  const driver = createAcpDriver(support(run));
+  return {
+    ...driver,
+    async create(input: Parameters<typeof driver.create>[0]) {
+      const base = await driver.create(input);
+      const environment = () => {
+        const env: NodeJS.ProcessEnv = { ...process.env, ...input.environment, PATH: augmentedPath() };
+        for (const key of [...PROVIDER_CREDENTIAL_ENV, ...WORKSPACE_CREDENTIAL_ENV]) {
+          if (key !== "CURSOR_API_KEY" && key !== "CURSOR_AUTH_TOKEN") delete env[key];
+        }
+        stripControlPlaneEnv(env);
+        return env;
+      };
+      const auth = new CursorAuthController({ cli: input.config.cli, environment,
+        authenticated: (cli, env) => probeCursorAuth(cli, env, run), onAuthenticated: base.refreshModels, installer });
+      const readRelease = createCursorReleaseReader(run);
+      let installFailure: string | undefined;
+      const verifyAndRefresh = async () => {
+        resetPathCache();
+        const snapshot = await base.snapshot();
+        if (snapshot.state !== "available") throw new Error("Cursor's CLI could not be verified. Check Settings → Engines.");
+        installFailure = undefined;
+        await base.adapter.stopAll();
+        await base.refreshModels?.();
+      };
+      return {
+        ...base,
+        get models() { return base.models; },
+        async snapshot() {
+          const snapshot = await base.snapshot();
+          if (snapshot.state !== "available" || !snapshot.version) return installFailure ? { ...snapshot, reason: installFailure } : snapshot;
+          installFailure = undefined;
+          const env = environment();
+          const release = await readRelease(resolveCursorCli(input.config.cli, env), env, snapshot.version);
+          const update = cursorReleaseUpdate(snapshot.version, release, input.config.cli);
+          return { ...snapshot, ...(update ? { update } : {}) };
+        },
+        authenticationMethod: "browser-poll" as const,
+        startAuthentication: () => auth.start(),
+        getAuthentication: (flowId: string) => auth.get(flowId),
+        cancelAuthentication: () => auth.cancel(),
+        // A manually selected CLI remains pinned until its owner resets it.
+        ...(input.config.cli === "cursor-agent" ? {
+          updateRuntime: async () => { await auth.update(); await verifyAndRefresh(); },
+          ...(cursorManagedInstallAvailable() ? { installRuntime: async () => {
+            installFailure = undefined;
+            try {
+              const env = environment();
+              const version = await execText(run, resolveCursorCli(input.config.cli, env), ["--version"], env);
+              if (version?.trim()) await auth.update();
+              else await auth.install();
+              await verifyAndRefresh();
+            } catch (cause) {
+              if ((cause as { status?: number })?.status === 409) throw cause;
+              installFailure = "Cursor installation or update did not finish. Check the server connection and writable HOME directory, then try again.";
+              throw new Error(installFailure);
+            }
+          } } : {}),
+        } : {}),
+        async dispose() { try { await auth.dispose(); } finally { await base.dispose(); } },
+      };
+    },
+  };
 }
 
 export const CursorAgentDriver = createCursorAgentDriver();

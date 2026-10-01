@@ -7,6 +7,7 @@ import { api, type EngineInstall, type InstanceInfo, useStore } from "@/state/st
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { CodexDeviceSignIn } from "./CodexDeviceSignIn";
+import { CursorSignIn } from "./CursorSignIn";
 import { ClaudeSignIn } from "./ClaudeSignIn";
 
 type Platform = "darwin" | "win32" | "linux";
@@ -154,7 +155,7 @@ export function CommandRow({
 /** One click installs or updates the engine on the machine running the
  * server, as the server's own user, into the app's own folder. The terminal
  * command stays behind a disclosure for people who prefer it. */
-function ServerEngineInstall({ instance, mode, command }: { instance: InstanceInfo; mode: "install" | "update"; command: string | null }) {
+export function ServerEngineInstall({ instance, mode, command = null }: { instance: InstanceInfo; mode: "install" | "update"; command?: string | null }) {
   const { refreshInstances, refreshModels } = useStore();
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -188,10 +189,10 @@ function ServerEngineInstall({ instance, mode, command }: { instance: InstanceIn
       >
         {busy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
         {busy
-          ? t("engineSetup.serverInstalling")
+          ? t(mode === "update" ? "engineSetup.serverUpdating" : "engineSetup.serverInstalling")
           : t(mode === "update" ? "engineSetup.serverUpdate" : "engineSetup.serverInstall", { name: instance.displayName })}
       </button>
-      {done && !busy && <p role="status" className="text-center text-[11px] text-success">{t("engineSetup.serverInstalled")}</p>}
+      {done && !busy && <p role="status" className="text-center text-[11px] text-success">{t(mode === "update" ? "engineSetup.serverUpdated" : "engineSetup.serverInstalled")}</p>}
       {error && <p role="alert" className="whitespace-pre-wrap text-[11.5px] leading-relaxed text-danger">{error}</p>}
       {command && (
         <details className="rounded-lg border border-hairline/50 bg-app px-2.5 py-2 text-[11.5px] text-ink-secondary">
@@ -408,12 +409,16 @@ export function EngineSetup({
   const signInOnly = intent === "cloud" && needsSignIn(instance);
   const deviceSignIn = signInOnly && instance.authentication?.method === "device-code";
   const pasteSignIn = signInOnly && instance.authentication?.method === "paste-code";
+  const cursorSignIn = signInOnly && instance.authentication?.method === "browser-poll" && instance.driverKind === "cursorAgent";
+  const serverInstall = install?.server && !install.server.updateOnly;
   const command = signInOnly ? signInCommand : installCommand;
   const title = signInOnly
     ? t("engineSetup.signInTitle", { name: instance.displayName })
     : t("engineSetup.installTitle", { name: instance.displayName });
   const description = descriptionOverride ?? (signInOnly
-    ? deviceSignIn
+    ? cursorSignIn
+      ? t("engineSetup.cursor.description")
+      : deviceSignIn
       ? t("engineSetup.device.description")
       : pasteSignIn
       ? t("engineSetup.claude.description")
@@ -422,7 +427,7 @@ export function EngineSetup({
       : t("engineSetup.terminalSignIn")
     : intent === "inject"
       ? t("engineSetup.injectDesc")
-      : install?.server
+      : serverInstall
         ? t("engineSetup.serverInstallDesc")
       : install?.managed
         ? t("engineSetup.managedDesc")
@@ -461,11 +466,13 @@ export function EngineSetup({
         </p>
       )}
 
-      {deviceSignIn ? (
+      {cursorSignIn ? (
+        <CursorSignIn key={instance.instanceId} instanceId={instance.instanceId} />
+      ) : deviceSignIn ? (
         <CodexDeviceSignIn key={instance.instanceId} instanceId={instance.instanceId} />
       ) : pasteSignIn ? (
         <ClaudeSignIn key={instance.instanceId} instanceId={instance.instanceId} />
-      ) : install.server && !signInOnly ? (
+      ) : serverInstall && !signInOnly ? (
         <ServerEngineInstall instance={instance} mode="install" command={installCommand} />
       ) : install.managed ? (
         <ManagedEngineSetup instance={instance} signInOnly={signInOnly} />
