@@ -17,12 +17,15 @@ const fixture = vi.hoisted(() => {
 vi.mock("@/state/store", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/state/store")>()),
   useStore: () => ({
-    state: { instances: fixture.instances, modelVariantSessions: fixture.modelVariantSessions },
+    state: { instances: fixture.instances, bots: [], modelVariantSessions: fixture.modelVariantSessions },
     dispatch: fixture.dispatch,
     refreshInstances: vi.fn(),
     refreshModels: vi.fn(),
   }),
 }));
+
+// These cases cover the full picker; Simple mode has its own file.
+vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 
 const { ClaudeAccountSelect, EffortRow, ModelEngineRail, ModelPicker, ModelVariantRow, modelSelectionForPick } = await import("./ModelPicker");
 
@@ -268,12 +271,38 @@ describe("ModelPicker trigger", () => {
   const effortChip = (markup: string) =>
     markup.match(/<span data-model-effort[^>]*>(.*?)<\/span>/s)?.[1].replace(/<!--.*?-->/g, "").trim();
 
+  /** The trigger's native tooltip as plain text, split into its lines. React
+   * HTML-escapes the apostrophe and may encode the newline numerically; both
+   * are undone here so the assertions read as the user sees them. */
+  const tooltipLines = (markup: string): string[] => {
+    const encoded = markup.match(/<button[^>]*\stitle="([^"]*)"/s)?.[1];
+    if (encoded === undefined) return [];
+    const amp = String.fromCharCode(38);
+    const newline = String.fromCharCode(10);
+    return encoded
+      .replaceAll(amp + "#x27;", "'")
+      .replaceAll(amp + "#10;", newline)
+      .split(newline);
+  };
+
   it("names the thread in busy header help and the bot in profile settings", () => {
     fixture.instances = [engine()];
     for (const threadId of ["independent-thread", undefined]) {
       const markup = renderToStaticMarkup(createElement(ModelPicker, { bot: { ...bot(), busy: true }, threadId }));
-      expect(markup).toContain(`Stop this ${threadId ? "thread" : "bot"}&#x27;s turn before changing its model`);
+      expect(tooltipLines(markup)).toEqual([
+        "Codex · GPT-5.6",
+        `Stop this ${threadId ? "thread" : "bot"}'s turn before changing its model`,
+      ]);
     }
+  });
+
+  it("puts the current model and effort above the busy advisory", () => {
+    fixture.instances = [engine(["low", "high"])];
+    const markup = renderToStaticMarkup(createElement(ModelPicker, { bot: { ...bot("high"), busy: true }, threadId: "independent-thread" }));
+    expect(tooltipLines(markup)).toEqual([
+      "Codex · GPT-5.6 · High effort",
+      "Stop this thread's turn before changing its model",
+    ]);
   });
 
   it("shows the model and its effort together in the header", () => {
@@ -311,6 +340,33 @@ describe("ModelPicker trigger", () => {
   });
 });
 
+describe("OpenAI sign-ins in the rail", () => {
+  const codex: InstanceInfo = { ...engine(), instanceId: "codex", driverKind: "codex", displayName: "Codex" };
+  const plan: InstanceInfo = { ...engine(), instanceId: "chatgpt", driverKind: "codex", displayName: "ChatGPT plan" };
+  const apiKey: InstanceInfo = { ...engine(), instanceId: "openai", driverKind: "openai-compat", displayName: "OpenAI", access: "api" };
+
+  it("folds Codex and the ChatGPT plan into one OpenAI button, apart from the API-key OpenAI", () => {
+    const markup = renderToStaticMarkup(createElement(ModelEngineRail, {
+      instances: [codex, plan, apiKey], selectedInstance: plan, onSelect: () => {},
+    }));
+    // one folded sign-in button, pressed for either of its engines, plus the key engine
+    expect(markup.match(/aria-label="OpenAI"/g)).toHaveLength(2);
+    expect(markup).toContain('aria-label="OpenAI" aria-pressed="true"');
+    expect(markup).not.toContain('aria-label="Codex"');
+    expect(markup).not.toContain('aria-label="ChatGPT plan"');
+    // only the key engine carries the key badge
+    expect(markup.match(/data-rail-key-badge/g)).toHaveLength(1);
+  });
+
+  it("opens the remembered OpenAI sign-in", () => {
+    const onSelect = vi.fn();
+    const rail = ModelEngineRail({ instances: [codex, plan], openaiInstance: plan, onSelect });
+    const button = Children.toArray(rail.props.children).find((child) => (child as ReactElement).type === "button") as ReactElement<{ onClick: () => void }>;
+    button.props.onClick();
+    expect(onSelect).toHaveBeenLastCalledWith(plan);
+  });
+});
+
 describe("Claude provider and account selection", () => {
   const personal: InstanceInfo = { ...engine(), instanceId: "claude-personal", driverKind: "claudeAgent", displayName: "Personal" };
   const work: InstanceInfo = { ...engine(), instanceId: "claude-work", driverKind: "claudeAgent", displayName: "Work", access: "custom" };
@@ -322,7 +378,7 @@ describe("Claude provider and account selection", () => {
       }));
       expect(markup.match(/aria-label="Claude"/g)).toHaveLength(1);
       expect(markup).toContain('aria-label="Claude" aria-pressed="true"');
-      expect(markup).toContain('aria-label="Codex" aria-pressed="false"');
+      expect(markup).toContain('aria-label="OpenAI" aria-pressed="false"');
       expect(markup).not.toContain('aria-label="Personal"');
       expect(markup).not.toContain('aria-label="Work"');
       expect(markup).toContain("w-14");
@@ -368,7 +424,7 @@ describe("organisation policy", () => {
   it("shows an engine the organisation disallows as managed and dimmed, not hidden", () => {
     const blocked: InstanceInfo = { ...engine(), policy: { organizationName: "Fixture Agency", reason: "Fixture Agency allows only company models on this computer. Choose a Company model for this bot." } };
     const markup = renderToStaticMarkup(createElement(ModelEngineRail, { instances: [blocked], onSelect: () => {} }));
-    expect(markup).toContain('aria-label="Codex · Managed by Fixture Agency"');
+    expect(markup).toContain('aria-label="OpenAI · Managed by Fixture Agency"');
     expect(markup).toContain("opacity-40");
     const allowed = renderToStaticMarkup(createElement(ModelEngineRail, { instances: [engine()], onSelect: () => {} }));
     expect(allowed).not.toContain("Managed by");

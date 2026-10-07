@@ -53,6 +53,9 @@ import { extractMcpImages } from "../mcp-tool-images.ts";
 import { parseProtocolAskQuestions, questionAnswersById, questionChoices } from "../../shared/ask-question.ts";
 import { codexVersionBehind, readLatestCodexRelease } from "./codex-release.ts";
 import { cliUpdateCommand } from "./cli-update-command.ts";
+import { canUseMcpServer } from "../../shared/tool-scope.ts";
+import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
+import { gateServer } from "../mcp-gate-config.ts";
 
 export { decodeCodexSelection, readCodexModelCatalog, STATIC_CODEX_MODELS } from "./codex-catalog.ts";
 
@@ -679,6 +682,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
     });
 
     const sendTurn = async (turn: SendTurnInput) => {
+      turn = { ...turn, toolScope: assertToolScopeSupported(DRIVER_KIND, turn.toolScope) };
       const generation = planGeneration;
       const assertPlanCurrent = () => {
         if (disposed) throw new Error("This provider was removed. Select a connected account and send again.");
@@ -743,42 +747,67 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         const env = childEnv();
         if (planToken) env.OPENMAUSBOT_CHATGPT_TOKEN = planToken;
         const appServerArgs = ["app-server", ...(plan ? chatgptPlanCodexArgs() : config.managed ? managedCodexArgs(config.managed) : codexLocalProviderArgs(env, turn.model)), ...codexToolSurfaceArgs(),
+          // Native snapshots can restore inherited variables after the shell
+          // policy has filtered them. Scoped MCP gate settings must stay private.
+          ...(turn.toolScope === undefined ? [] : ["-c", "features.shell_snapshot=false"]),
           // A guest-driven turn (SendTurnInput.guestConfined): no shell and
           // no file reads, whatever the person's own config says (-c wins
           // over config files). The turn also starts with no environment.
           ...(turn.guestConfined ? GUEST_CONFINED_CODEX_ARGS : [])];
+        const selectedMcp = new Map<string, McpServerSpec>();
+        const selectedApprovals = new Map<string, boolean>();
+        const scopedServer = (name: string, mountName: string, server: McpServerSpec) => {
+          if (!canUseMcpServer(turn.toolScope, name)) return null;
+          return turn.toolScope === undefined ? server : gateServer({ name, server, threadId, budget: 0, toolScope: turn.toolScope, nodeEnv: { ELECTRON_RUN_AS_NODE: "1" },
+            configEnvName: `OMB_GATE_CONFIG_${createHash("sha256").update(mountName).digest("hex")}` });
+        };
+        const mountSelected = (name: string, mountName: string, server: McpServerSpec, preApproved = true) => {
+          const selected = scopedServer(name, mountName, server);
+          if (selected) {
+            selectedMcp.set(mountName, selected);
+            selectedApprovals.set(mountName, preApproved);
+            mountMcpServer(appServerArgs, env, mountName, selected, preApproved);
+            if (turn.toolScope !== undefined && !preApproved) appServerArgs.push("-c", `mcp_servers.${mountName}.default_tools_approval_mode="prompt"`);
+          }
+        };
         if (turn.integrations?.composio) {
-          mountMcpServer(appServerArgs, env, "openmausbot_connectors", turn.integrations.composio);
+          mountSelected("composio", "openmausbot_connectors", turn.integrations.composio);
         }
         if (turn.integrations?.agents) {
-          mountMcpServer(appServerArgs, env, "agents", turn.integrations.agents);
+          mountSelected("agents", "agents", turn.integrations.agents);
         }
         if (turn.integrations?.localComputer) {
           // The host daemon and isolated Local VM both arrive as a direct Cua
           // Driver stdio MCP server. Codex sees the same computer tool surface.
-          mountMcpServer(appServerArgs, env, "computer", turn.integrations.localComputer);
+          mountSelected("computer", "computer", turn.integrations.localComputer);
         }
         if (turn.integrations?.browser) {
-          mountMcpServer(appServerArgs, env, "browser", turn.integrations.browser);
+          mountSelected("browser", "browser", turn.integrations.browser);
         }
         // A custom server named like one in the user's own config.toml would
         // be merged with it by the `-c` override — a stdio command over a
         // remote url is "invalid configuration" and kills the turn before the
         // model is asked. Such a server mounts under a name of its own.
         const declaredInCodexConfig = codexConfigMcpServerNames(env);
+        if (turn.toolScope !== undefined) {
+          for (const name of declaredInCodexConfig) appServerArgs.push("-c", `mcp_servers.${name}.enabled=false`);
+        }
         for (const [name, server] of Object.entries(turn.integrations?.custom ?? {})) {
           // codex speaks streamable HTTP to a remote server, not the older
           // SSE transport: such an entry still reaches Claude bots, and is
           // left out here rather than mounted as something it is not
-          if ("url" in server && server.type === "sse") {
+          if (turn.toolScope === undefined && "url" in server && server.type === "sse") {
             noteSkippedSseServer(name);
             continue;
           }
           const mountName = mountedMcpServerName(name, declaredInCodexConfig);
           if (mountName !== name) noteRenamedMcpServer(name, mountName);
-          mountMcpServer(appServerArgs, env, mountName, server, false);
+          mountSelected(name, mountName, server, false);
         }
         if (turn.integrations?.phone) {
+          if (turn.toolScope !== undefined) {
+            mountSelected("phone", "openmausbot_phone", turn.integrations.phone);
+          } else {
           const bridge = turn.integrations.phone;
           Object.assign(env, bridge.env);
           const prefix = "mcp_servers.openmausbot_phone";
@@ -788,7 +817,14 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
             "-c", `${prefix}.env_vars=${JSON.stringify(Object.keys(bridge.env))}`,
             "-c", `${prefix}.default_tools_approval_mode="auto"`,
           );
+          }
         }
+
+        const selectionConfig: { config?: Record<string, unknown> } = turn.toolScope === undefined ? {} : { config: { mcp_servers: Object.fromEntries(
+          [...selectedMcp].map(([name, server]) => [name, "command" in server ? {
+            command: server.command, args: server.args, env_vars: Object.keys(server.env), env: {}, default_tools_approval_mode: selectedApprovals.get(name) ? "auto" : "prompt",
+          } : {}]),
+        ) } };
 
         const commandCwd = permissionLaunchCwd(turn.cwd ?? homedir());
         const child = spawnCli(config.cli, appServerArgs, {
@@ -1125,6 +1161,24 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         });
       };
 
+      const seenReviews = new Set<string>();
+      let reviewWarning = false;
+      let timedOutReview = false;
+      const retryMode = approvalMode[0].toUpperCase() + approvalMode.slice(1);
+      const reviewNotice = (status: "warning" | "timedOut" | "denied", action?: any) => {
+        if (status === "warning") {
+          emit({ ...base(threadId, turnId), type: "runtime.error",
+            message: `Codex automatic review reported a timeout. Check what ran before retrying. Retry stays ${retryMode}. Select Ask for human approval in approval settings.`,
+          });
+          return;
+        }
+        const command = action?.type === "command" ? commandSummary({ command: action.command }) : undefined;
+        const target = command ? `: "${command.slice(0, 30)}"` : " for the requested action";
+        const outcome = status === "timedOut" ? "timed out" : "denied";
+        emit({ ...base(threadId, turnId), type: "runtime.error",
+          message: `Codex automatic review ${outcome}${target}. Action did not run. Retry stays ${retryMode}. Select Ask for human approval in approval settings.`,
+        });
+      };
       const handleNotification = (msg: any) => {
         const p = msg.params ?? {};
         // An app-server also emits notifications for native helper threads.
@@ -1160,9 +1214,27 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           }
           const eventTurnId = msg.method === "turn/started" || msg.method === "turn/completed"
             ? p.turn?.id : p.turnId;
-          if (eventTurnId !== codexTurnId) return;
+          // guardianWarning is thread-scoped in Codex 0.147; this child
+          // process belongs to one app turn. Never admit a mismatched turnId.
+          if (eventTurnId !== codexTurnId && !(msg.method === "guardianWarning" && eventTurnId === undefined)) return;
         }
         switch (msg.method) {
+          case "guardianWarning":
+            if (typeof p.message === "string" && /automatic approval review.*timed out/i.test(p.message)) reviewWarning = true;
+            break;
+          case "item/autoApprovalReview/completed": {
+            const status = p.review?.status;
+            if (status !== "timedOut" && status !== "denied") break;
+            // Completed reviews carry a reviewId. Without it distinct
+            // failures cannot be separated from duplicate notifications.
+            if (typeof p.reviewId !== "string" || !p.reviewId) break;
+            if (!seenReviews.has(p.reviewId)) {
+              seenReviews.add(p.reviewId);
+              if (status === "timedOut") timedOutReview = true;
+              reviewNotice(status, p.action);
+            }
+            break;
+          }
           // token-level chat text; the item/completed frame follows with the
           // whole message, so its delta is only a fallback when none streamed
           case "item/agentMessage/delta": {
@@ -1293,6 +1365,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
             break;
           }
           case "turn/completed": {
+            if (reviewWarning && !timedOutReview) reviewNotice("warning");
             const t = p.turn ?? {};
             const message = typeof t.error?.message === "string" ? codexUserError(t.error.message, plan) : "";
             if (t.status !== "completed" && message && message !== state.lastError) {
@@ -1493,6 +1566,39 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
               : "Could not read Codex configuration; cannot safely update bot instructions. Retry after checking Codex.",
           );
         }
+        if (turn.toolScope !== undefined) {
+          if ((effectiveConfig as { features?: { shell_snapshot?: unknown } } | null)?.features?.shell_snapshot !== false) {
+            throw new Error("Codex could not disable inherited shell snapshots. No prompt was sent.");
+          }
+          // Gate descriptors belong to MCP children, never native shell tools.
+          // Extend the effective policy for both new and resumed threads so
+          // local, Company and ChatGPT turns retain the person's exclusions.
+          const rawPolicy = (effectiveConfig as { shell_environment_policy?: unknown } | null)?.shell_environment_policy;
+          if (rawPolicy !== undefined && (!rawPolicy || typeof rawPolicy !== "object" || Array.isArray(rawPolicy))) {
+            throw new Error("Codex could not confirm its shell environment policy. No prompt was sent.");
+          }
+          const policy = (rawPolicy ?? {}) as Record<string, unknown>;
+          const excluded = policy.exclude === undefined ? [] : policy.exclude;
+          if (!Array.isArray(excluded) || excluded.some(name => typeof name !== "string")) {
+            throw new Error("Codex could not confirm its shell environment exclusions. No prompt was sent.");
+          }
+          selectionConfig.config!["shell_environment_policy.exclude"] = [...new Set([...excluded, "OMB_GATE_CONFIG_*"])];
+          const catalog = (effectiveConfig as { mcp_servers?: unknown } | null)?.mcp_servers;
+          if (!catalog || typeof catalog !== "object" || Array.isArray(catalog)) throw new Error("Codex could not confirm its selected MCP configuration. No prompt was sent.");
+          for (const [name, entry] of Object.entries(catalog)) {
+            if (entry && typeof entry === "object" && (entry as { enabled?: unknown }).enabled === false) continue;
+            const expected = selectedMcp.get(name);
+            const actual = entry as { command?: unknown; args?: unknown; env_vars?: unknown; env?: unknown; default_tools_approval_mode?: unknown; tools?: unknown } | null;
+            if (!expected || !("command" in expected) || actual?.command !== expected.command
+              || JSON.stringify(actual?.args ?? []) !== JSON.stringify(expected.args ?? [])
+              || !Array.isArray(actual?.env_vars) || JSON.stringify([...actual.env_vars].sort()) !== JSON.stringify(Object.keys(expected.env).sort())
+              || actual.default_tools_approval_mode !== (selectedApprovals.get(name) ? "auto" : "prompt")
+              || (actual.env != null && (typeof actual.env !== "object" || Array.isArray(actual.env) || Object.keys(actual.env).length > 0))
+              || (actual.tools != null && (typeof actual.tools !== "object" || Array.isArray(actual.tools) || Object.keys(actual.tools).length > 0))) {
+              throw new Error("Codex has an MCP server outside the selected configuration. Disable native MCP entries for this account before using tool selection. No prompt was sent.");
+            }
+          }
+        }
         // Proven before the turn starts: a Codex that did not take the
         // overrides runs nothing for a guest.
         if (turn.guestConfined && !codexShellDisabled(effectiveConfig)) {
@@ -1501,10 +1607,11 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         // Only the stable half of the prompt belongs in the developer slot:
         // it is the part that must survive compaction unchanged, and any
         // change to it invalidates the provider's cached prefix. The volatile
-        // half (memory, mentions, outstanding teammate work) is delivered
-        // inside the turn that changed it, after the cached prefix, the same
-        // contract SendTurnInput.systemStable documents. Without the split
-        // the driver keeps the previous single-block behaviour.
+        // half (the sections in VOLATILE_SECTIONS, system-prompt.ts) is
+        // delivered inside the turn that changed it, after the cached
+        // prefix, the same contract SendTurnInput.systemStable documents.
+        // Without the split the driver keeps the previous single-block
+        // behaviour.
         const stableInstructions = typeof turn.systemStable === "string" && typeof turn.systemVolatile === "string"
           ? turn.systemStable
           : null;
@@ -1542,6 +1649,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         let promptText = turn.text;
         if (cursor) {
           const resumeThread = () => request("thread/resume", {
+            ...selectionConfig,
             threadId: cursor,
             developerInstructions,
             model: selection.model,
@@ -1585,6 +1693,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         }
         if (!codexThreadId) {
           const startThread = () => request("thread/start", {
+              ...selectionConfig,
               developerInstructions,
               cwd: turn.cwd ?? homedir(),
               model: selection.model,
@@ -1648,8 +1757,8 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
             // back. The app-server offers no way to clear a level either:
             // "" is rejected outright and thread/start takes no effort at
             // all. So a thread keeps the last level it was sent until it is
-            // sent another, and choosing Default lands on the bot's next new
-            // thread rather than the current one.
+            // sent another; back on Default, the harness gives a thread that
+            // holds a level a new thread instead of resuming it (server/index.ts).
             ...(turn.effort ? { effort: turn.effort } : {}),
           });
         };

@@ -13,6 +13,7 @@ function profile(overrides: Partial<CatalogProfile> = {}): CatalogProfile {
     sharedComputers: false,
     voiceNotes: false,
     cloudHome: false,
+    chief: false,
     botId: WATCHER_OPTIONS_CARD_BOT_ID,
     ...overrides,
   };
@@ -30,18 +31,17 @@ function context(overrides: Partial<ToolCallContext> = {}): ToolCallContext {
       api: async () => ({}),
       apiResponse: async () => ({ ok: true, status: 200, body: {} }),
     },
-    turn: {
-      createdThisTurn: 0,
-      roomPostsThisTurn: 0,
-      threadsOpenedThisTurn: 0,
-      memoryRefusalsThisTurn: 0,
-      delegationTaskIdsThisTurn: new Set(),
-    },
     ...overrides,
   };
 }
 
 describe("Watcher options-card tool", () => {
+  it("hides memory tools when native memory is off", () => {
+    const names = availableTools(profile({ memoryEnabled: false })).map((tool) => tool.name);
+    expect(names).not.toContain("memory_update");
+    expect(names).not.toContain("memory_log");
+    expect(names).toContain("session_search");
+  });
   it("is advertised only to Watcher interactive turns", () => {
     expect(availableTools(profile()).map((tool) => tool.name)).toContain("create_options_card");
     expect(availableTools(profile({ botId: "another-bot" })).map((tool) => tool.name)).not.toContain("create_options_card");

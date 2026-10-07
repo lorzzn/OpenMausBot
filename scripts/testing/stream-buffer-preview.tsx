@@ -1,6 +1,5 @@
-// Fixture-only probe of the real renderer store. The app's active-turn UI
-// shows presence rather than partial text; these outputs make both stream
-// channels observable without changing that product behavior.
+// Fixture-only probe of the real renderer store. The app shows partial
+// assistant text; this probe also makes ephemeral reasoning observable.
 import { createRoot } from "react-dom/client";
 import { StoreProvider, useStore, useStreaming } from "../../src/state/store";
 

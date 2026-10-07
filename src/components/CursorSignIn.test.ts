@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StoreProvider, type InstanceInfo } from "@/state/store";
 import { CursorSignInProgress } from "./CursorSignIn";
-import type { DeviceSignInStatus } from "./CodexDeviceSignIn";
+import type { DeviceSignInStatus } from "./DeviceSignIn";
 import { EngineSetup, ServerEngineInstall } from "./EngineSetup";
 
 afterEach(() => vi.unstubAllGlobals());

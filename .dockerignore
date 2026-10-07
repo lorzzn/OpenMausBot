@@ -17,3 +17,7 @@ electron/resources/cloudflared*
 .env
 **/.env
 **/.env.*
+
+.playwright-cli/
+
+output/playwright/

@@ -4,13 +4,19 @@ From the repository root, run `docker compose up -d --build`, then open
 http://localhost:8080. Docker with Linux containers is required.
 Compose supplies defaults; no `.env` file is required.
 The application container uses Docker's init process to reap orphaned agent
-subprocesses.
+subprocesses. The upstream server launcher also handles requested application
+restarts inside the same container, keeping Caddy and the Tunnel attached to
+the shared network namespace. Docker stops forward SIGTERM to the server for
+its normal cleanup.
 
 To customize, copy `.env.example` to `.env` in the repository root.
 The `.env` file is ignored by Git. Shell environment variables take precedence.
 `OMB_HTTP_PORT` changes the host port and the default public URL.
 Internal service ports remain fixed inside the shared network namespace.
 `ENGINES` selects space-separated npm packages; an empty value skips installation.
+The image also carries Grok Build, pinned by `GROK_VERSION` in
+`deploy/local/Dockerfile`; Grok and Codex sign in from the app's engine setup
+with a one-time code, no terminal needed.
 
 Cursor is installed on demand from **Settings → Engines → Cursor → Install
 Cursor on this server**. Building or starting the Docker image does not download

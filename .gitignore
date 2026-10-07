@@ -42,3 +42,7 @@ deploy/podman/.env
 deploy/podman/.env.*
 !deploy/podman/.env.example
 /.env
+
+.playwright-cli/
+
+output/playwright/

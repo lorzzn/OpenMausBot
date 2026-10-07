@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { DurationSequencer } from "./scripts/testing/duration-sequencer.ts";
 
 // The About dialog shows the shipped version; package.json is the one place
 // it is already maintained, so it is inlined at build time rather than
@@ -33,6 +34,8 @@ export default defineConfig({
     // the suite spawns fake provider CLIs and a real harness server;
     // parallel files introduce load-sensitive flakes for no win
     fileParallelism: false,
+    // --shard splits the files by recorded CI seconds, not count (docs/ci.md)
+    sequence: { sequencer: DurationSequencer },
     testTimeout: 20_000,
     hookTimeout: 30_000,
   },
@@ -49,12 +52,13 @@ export default defineConfig({
     // packager output lands inside the repo — its HTML files must never
     // trigger dev full-page reloads
     watch: {
-      ignored: ["**/release/**", "**/build/**", "**/dist/**", "**/electron/resources/**"],
+      ignored: ["**/release/**", "**/build/**", "**/dist/**", "**/electron/resources/**", "**/.omb-scratch/**", "**/.playwright-cli/**", "**/output/playwright/**"],
     },
     // the harness server owns every provider process; the app only ever
     // talks to /api — clients hold no transports
     proxy: {
       "/api": {
+        ws: true,
         target: `http://127.0.0.1:${process.env.OMB_PORT || process.env.OGB_PORT || 8799}`,
       },
       "/.well-known/openmausbot/environment": {

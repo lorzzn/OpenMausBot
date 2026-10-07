@@ -34,7 +34,7 @@ describe("approval mode selector", () => {
       {
         mode: "auto",
         label: "Approve for me",
-        description: "Uses the provider's automatic review to approve routine actions and ask about others",
+        description: "Uses the provider's automatic review to approve routine actions and ask about others. Web search is allowed without asking.",
       },
       {
         mode: "full",
@@ -86,7 +86,7 @@ describe("approval mode selector", () => {
     expect(approvalModeOptionsFor("antigravityAgent", false).map((option) => option.mode)).toEqual(["ask", "edits"]);
   });
 
-  it.each(["openai-compat", "kimiAgent", "droidAgent", "hermesAgent", "piAgent", "boxAgent", "customAcp"])(
+  it.each(["openai-compat", "kimiAgent", "droidAgent", "hermesAgent", "piAgent", "customAcp", "cerebras"])(
     "offers explicit auto-approve for %s without pretending safe Auto reviews requests", (driverKind) => {
       const options = approvalModeOptionsFor(driverKind, true, false);
       expect(options.map((option) => option.mode)).toEqual(["ask", "full"]);

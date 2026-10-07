@@ -23,14 +23,14 @@ import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const HOST = "omb-t-0123456789ab.fly.dev";
-const PERSONAL = "Cloud Pro is personal: only your own devices can connect.";
+const PERSONAL = "My Cloud is personal: only your own devices can connect.";
 const secret = randomBytes(32).toString("base64url");
 let home = "", dataDir = "", base = "", port = 0, log = "";
 let child: ChildProcess | undefined;
 let cloud = false;
 /** From the first (self-hosted) run: a device with full access, a chat-only one, and what each opened. */
 const before = { device: "", deviceId: "", chatOnly: "", bot: { id: "", threadId: "" }, roomBot: { id: "", threadId: "" }, conversation: "", theirs: "",
-  lead: { id: "", threadId: "" }, member: { id: "", threadId: "" }, room: "", launch: "", plan: "", friends: "", routine: "", approved: "", full: { id: "", threadId: "" }, fullShared: "", stale: "", moved: "", fullOld: "" };
+  lead: { id: "", threadId: "" }, member: { id: "", threadId: "" }, room: "", launch: "", plan: "", friends: "", routine: "", approved: "", full: { id: "", threadId: "" }, fullShared: "", stale: "", moved: "", fullOld: "", fullApproved: "" };
 const project = () => join(home, "projects", "site");
 
 async function api(method: string, path: string, options: { body?: unknown; token?: string } = {}) {
@@ -216,6 +216,10 @@ await import(${JSON.stringify(pathToFileURL(join(SERVER_DIR, "testing", "fake-cl
   // A routine on the Full bot from before, with no proof it is the owner's.
   before.fullOld = (await api("POST", "/api/routines", { token: before.device, body: { name: "Full's old", prompt: "Deploy.", botId: before.full.id,
     enabled: false, schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 3_600_000 } } })).body.routine.id;
+  // A routine on the Full bot the owner wrote but that has no fingerprint yet
+  // (as after a v0.1.91 approval, a template or a restore): recorded below.
+  before.fullApproved = (await api("POST", "/api/routines", { token: before.device, body: { name: "Nightly deploy", prompt: "Deploy the site.", botId: before.full.id,
+    enabled: false, schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 3_600_000 } } })).body.routine.id;
   // A conversation with the Full bot that the friend (unpaired before the upgrade) wrote in too.
   before.fullShared = (await api("POST", `/api/bots/${before.full.id}/tasks`, { token: before.device, body: { title: "Shared" } })).body.task.threadId;
   await turn(() => api("POST", `/api/bots/${before.full.id}/messages`, { token: friend, body: { text: "Hi there.", threadId: before.fullShared } }));
@@ -230,7 +234,7 @@ await import(${JSON.stringify(pathToFileURL(join(SERVER_DIR, "testing", "fake-cl
   await shutdown();
   // The stale routine, as a Cloud home that already had the owner's key recorded it.
   const ownerKeyAtBoot = `p_${createHash("sha256").update("cloud-owner:3f9c2a4e-8b1d-4c6e-9a7f-2d5e8c1b0a93").digest("base64url").slice(0, 22)}`;
-  writeFileSync(join(dataDir, "lending-routines.json"), JSON.stringify({ version: 1, routines: { [before.stale]: "0".repeat(64) }, writers: { [before.stale]: ownerKeyAtBoot } }));
+  writeFileSync(join(dataDir, "lending-routines.json"), JSON.stringify({ version: 1, routines: { [before.stale]: "0".repeat(64) }, writers: { [before.stale]: ownerKeyAtBoot, [before.fullApproved]: ownerKeyAtBoot } }));
   // A bot at Full access (set where only the desktop app can set it: its record).
   const bots = JSON.parse(readFileSync(join(dataDir, "bots.json"), "utf8"));
   const record = Array.isArray(bots) ? bots : bots.bots;
@@ -589,3 +593,67 @@ it("approving a change never makes someone else's routine the owner's; a run of 
   for (const active of (await api("GET", "/api/routines", { token: owner })).body.runs ?? []) await api("POST", `/api/routine-runs/${active.id}/cancel`, { token: owner });
   await idle(before.full, owner);
 }, 120_000);
+
+it("a routine of the owner's not yet cleared for the Mac can't clear itself: its run changing its own schedule leaves it without the Mac", async () => {
+  const owner = await adminPairing();
+  await settleAll(owner);
+  const ownerKey = `p_${createHash("sha256").update("cloud-owner:3f9c2a4e-8b1d-4c6e-9a7f-2d5e8c1b0a93").digest("base64url").slice(0, 22)}`;
+  const authors = () => JSON.parse(readFileSync(join(dataDir, "lending-routines.json"), "utf8"));
+  // The owner's, with no fingerprint yet.
+  expect(authors().writers[before.fullApproved]).toBe(ownerKey);
+  expect(authors().routines[before.fullApproved]).toBeUndefined();
+  // Its run, on the Full bot, changes its own schedule at once: that is not the owner's own edit.
+  await turn(async () => expect((await api("POST", `/api/routines/${before.fullApproved}/run`, { token: owner })).status).toBe(201));
+  const tuned = JSON.stringify(await (await agentTools())("propose_routine_action", { routine_id: before.fullApproved, action: "update",
+    changes: { schedule: { type: "cron", expression: "0 3 * * *", timeZone: "America/New_York" } } }));
+  expect(tuned).not.toContain("isError\":true");
+  expect((await api("GET", "/api/routines", { token: owner })).body.routines.find((routine: any) => routine.id === before.fullApproved).schedule.expression, tuned).toBe("0 3 * * *");
+  // No fingerprint, so still no Mac; saving it once is what clears it.
+  expect(authors().routines[before.fullApproved]).toBeUndefined();
+  for (const active of (await api("GET", "/api/routines", { token: owner })).body.runs ?? []) await api("POST", `/api/routine-runs/${active.id}/cancel`, { token: owner });
+  await idle(before.full, owner);
+}, 120_000);
+
+// The same server code runs a Cloud home, the desktop app and a VPS
+// (server/direct-coordination.e2e.test.ts covers those two): a follow-up from
+// one conversation continues the teammate's thread, behind the work in it.
+it("a follow-up from the same conversation continues the teammate's thread instead of opening a second one", async () => {
+  const owner = await adminPairing();
+  await settleAll(owner);
+  const chat = (await api("POST", `/api/bots/${before.lead.id}/tasks`, { token: owner, body: { title: "Ship it" } })).body.task.threadId;
+  // A teammate in the lead's own project folder: the owner's chat and the
+  // teammate's work thread run there at the same time, as a bot's threads do
+  // in one folder everywhere (desktop, headless server, Cloud home).
+  const writer = (await api("POST", "/api/bots", { token: owner, body: { name: "Writer", modelSelection: { instanceId: "held", model: "claude-sonnet-5" } } })).body.bot;
+  expect((await api("PATCH", `/api/bots/${writer.id}`, { token: owner, body: { cwd: project() } })).status).toBe(200);
+  const bots = async () => (await api("GET", "/api/bots", { token: owner })).body.bots as any[];
+  const writerTasks = async () => (await bots()).find((bot) => bot.id === writer.id).tasks as any[];
+  const opened = (await writerTasks()).length;
+  const send = async (text: string, message: string) => {
+    // The lead's chat runs in its project folder…
+    expect((await turn(async () => expect((await api("POST", `/api/bots/${before.lead.id}/messages`, { token: owner, body: { text, threadId: chat } })).status).toBe(202))).cwd).toBe(realpathSync(project()));
+    const result = await (await agentTools())("coordinate_bots", { bot_ids: [writer.id], message });
+    expect(JSON.stringify(result)).not.toContain("isError\":true");
+    return JSON.parse(result.content[0].text).receipts[0];
+  };
+  const first = await send("Get the writer drafting.", "Draft the launch post.");
+  expect(first).toMatchObject({ outcome: "queued", threadId: expect.any(String) });
+  await until(async () => (await writerTasks()).find((task) => task.threadId === first.threadId)?.busy === true, "the writer to start");
+  // …and the writer's engine starts in that same folder while the lead's turn
+  // still runs there: neither was stopped or refused the folder. Every held
+  // engine writes the one dump, so once the writer's process is up it is the
+  // writer's — waited for here, so the follow-up's turn() below cannot read
+  // a late writer dump as the lead's and hand agentTools the wrong token.
+  const engine = () => { try { return JSON.parse(readFileSync(held(), "utf8")); } catch { return undefined; } };
+  await until(() => JSON.stringify(engine()?.prompt ?? "").includes("Draft the launch post"), "the writer's engine to start");
+  expect(realpathSync(engine().cwd)).toBe(realpathSync(project()));
+  expect((await writerTasks()).find((task) => task.threadId === first.threadId)?.cwd).toBe(project());
+  expect((await bots()).find((bot) => bot.id === before.lead.id)?.tasks.find((task: any) => task.threadId === chat)).toMatchObject({ busy: true, cwd: project() });
+  expect((await api("POST", `/api/bots/${before.lead.id}/interrupt`, { token: owner, body: { threadId: chat } })).status).toBe(200);
+  await until(async () => ((await api("GET", "/api/bots", { token: owner })).body.bots as any[]).find((bot) => bot.id === before.lead.id)?.busy === false, "the lead to stop");
+  const followUp = await send("Change of plan: keep it short.", "Keep the launch post under 100 words.");
+  expect(followUp).toMatchObject({ outcome: "queued", threadId: first.threadId });
+  expect(followUp.detail).toContain('sent to "@');
+  expect(await writerTasks()).toHaveLength(opened + 1);
+  await settleAll(owner);
+}, 60_000);

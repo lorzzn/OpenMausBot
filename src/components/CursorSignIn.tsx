@@ -3,7 +3,7 @@ import { ExternalLink, Loader2, LogIn } from "lucide-react";
 import { cursorAuthorizationUrl } from "../../shared/cursor-auth";
 import { api, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
-import { deviceFlowUnavailable, type DeviceSignInStatus } from "./CodexDeviceSignIn";
+import { deviceFlowUnavailable, type DeviceSignInStatus } from "./DeviceSignIn";
 
 function endedFlow(phase: "expired" | "failed"): DeviceSignInStatus {
   return { phase, flowId: null, authorizationUrl: null, expiresAt: null };
