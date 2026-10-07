@@ -498,7 +498,7 @@ import { OutboundRequestService } from "./outbound-requests.ts";
 import { DEFAULT_OUTBOUND_POLICY, connectorCallsIn, normalizeOutboundPolicy, outboundCallsIn } from "../shared/outbound.ts";
 import { connectorAccessDecision, describeConnectorScopes, normalizeConnectorScopes } from "../shared/connector-scopes.ts";
 import { bindThreadLogCapProvider } from "./thread-log-rotation.ts";
-import { listenWebhookIngress, webhookCredential, type WebhookIngress } from "./webhook-ingress.ts";
+import { createWebhookIngressHandler, listenWebhookIngress, webhookCredential, type WebhookIngress } from "./webhook-ingress.ts";
 import { assertModelVariantSupported, memberTurnSelection } from "./member-turn.ts";
 import { WebhookManager } from "./webhooks.ts";
 import type { WebhookTrigger } from "../shared/webhooks.ts";
@@ -638,6 +638,9 @@ import { createLiveRoutes } from "./routes/live.ts";
 import { withScopeHint } from "./connector-scope-hint.ts";
 
 const PORT = Number(process.env.OMB_PORT || process.env.OGB_PORT || 8799);
+// The desktop/CLI stays private by default. Docker explicitly enables a
+// public container listener and controls exposure through port mappings.
+const LISTEN_HOST = process.env.OMB_LISTEN_HOST?.trim() || "127.0.0.1";
 const WEBHOOK_PORT = Number(process.env.OMB_WEBHOOK_PORT || PORT + 1);
 // Behind a proxy or tunnel, the base URL senders should use (docs/self-hosting.md).
 const WEBHOOK_PUBLIC_URL = process.env.OMB_WEBHOOK_PUBLIC_URL || undefined;
@@ -12235,6 +12238,9 @@ const webhooks = new WebhookManager({
 
 let webhookIngress: WebhookIngress | null = null;
 let webhookIngressError: string | null = null;
+// Also serve the capability-protected receiver on the app's HTTP port, so
+// direct Docker access and HTTP tunnels do not need a routing gateway.
+const handleWebhookRequest = createWebhookIngressHandler(webhooks, () => workspaceMaintenance.request());
 try {
   webhookIngress = await listenWebhookIngress(webhooks, {
     port: WEBHOOK_PORT, publicBaseUrl: WEBHOOK_PUBLIC_URL,
@@ -15973,6 +15979,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   let m: RegExpMatchArray | null = null;
   let releaseWorkspaceRequest: (() => void) | undefined;
   try {
+    if (path.startsWith("/hooks/")) return await handleWebhookRequest(req, res);
     // Unlike the legacy reachability probe, this attests the running
     // server's portal-membership capability, including live entitlement.
     if (method === "GET" && path === "/api/health/hosted") {
@@ -25550,9 +25557,9 @@ restoreChannelMessages();
   if (movedAutoPins) console.log(`Works on: moved ${movedAutoPins} auto-pinned thread(s) to their bot's current Works on`);
 }
 
-server.listen(PORT, "127.0.0.1", async () => {
+server.listen(PORT, LISTEN_HOST, async () => {
   companyRuntimeReady();
-  console.log(`openmausbot server on http://127.0.0.1:${PORT}`);
+  console.log(`openmausbot server on http://${LISTEN_HOST}:${PORT}`);
   // Words queued before the restart start first, ahead of anything sent from
   // now on. Their turns wait for the engines read at start like every turn.
   followupsReady = true;

@@ -12,7 +12,6 @@ services:
     user: "1000:1000"
     environment:
       DOCKER_HOST: unix:///run/docker/docker.sock
-      OMB_LOCAL_VM_VIEWER_PROXY: "1"
     volumes:
       - vm_socket:/run/docker
       - /usr/bin/docker:/usr/local/bin/docker:ro

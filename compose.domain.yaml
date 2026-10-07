@@ -1,0 +1,32 @@
+# Optional public-domain HTTPS. Set OMB_DOMAIN to a hostname whose DNS points
+# to this machine, then add this overlay to compose.yaml (+ compose.vm.yaml).
+# Caddy obtains and renews the certificate; no local IP certificate is needed.
+services:
+  omb:
+    ports: !override
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+    environment:
+      OMB_LISTEN_HOST: "127.0.0.1"
+      OMB_PUBLIC_URL: "https://${OMB_DOMAIN:?Set OMB_DOMAIN to a public hostname}"
+      OMB_WEBHOOK_PUBLIC_URL: "https://${OMB_DOMAIN:?Set OMB_DOMAIN to a public hostname}"
+
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2}
+    restart: unless-stopped
+    network_mode: service:omb
+    environment:
+      OMB_DOMAIN: "${OMB_DOMAIN:?Set OMB_DOMAIN to a public hostname}"
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    depends_on:
+      omb:
+        condition: service_healthy
+    volumes:
+      - ./deploy/local/Caddyfile.domain:/etc/caddy/Caddyfile:ro
+      - ./deploy/local/Caddyfile.routes:/etc/caddy/Caddyfile.routes:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -2,13 +2,46 @@
 # with deploy/local/make-https-cert.sh before applying this overlay.
 services:
   omb:
-    ports:
+    # HTTPS puts the optional gateway in front of the private app listener.
+    ports: !override
+      - "${OMB_BIND_ADDRESS:-127.0.0.1}:${OMB_HTTP_PORT:-8080}:80"
       - "0.0.0.0:${OMB_HTTPS_PORT:-8443}:443"
+    environment:
+      OMB_LISTEN_HOST: "127.0.0.1"
   caddy:
+    image: ${CADDY_IMAGE:-caddy:2}
+    restart: unless-stopped
+    network_mode: service:omb
     environment:
       OMB_HTTPS_PORT: ${OMB_HTTPS_PORT:-8443}
+      OMB_HTTPS_HOST: ${OMB_HTTPS_HOST:-}
+      OMB_BIND_ADDRESS: ${OMB_BIND_ADDRESS:-127.0.0.1}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        export OMB_UPSTREAM_SCHEME=http
+        if [ -n "$$OMB_HTTPS_HOST" ] && [ "$$OMB_BIND_ADDRESS" != "127.0.0.1" ]; then
+          echo "OMB_HTTPS_HOST requires OMB_BIND_ADDRESS=127.0.0.1; forward HTTPS through a trusted local proxy." >&2
+          exit 1
+        fi
+        if [ -n "$$OMB_HTTPS_HOST" ]; then
+          export OMB_UPSTREAM_SCHEME=https
+        fi
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    depends_on:
+      omb:
+        condition: service_healthy
     volumes:
+      - ./deploy/local/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/local/Caddyfile.routes:/etc/caddy/Caddyfile.routes:ro
+      - caddy_data:/data
+      - caddy_config:/config
       - ./deploy/local/Caddyfile.https:/etc/caddy/optional/https.caddy:ro
       - ./.omb-local-tls/http-redirect.caddy:/etc/caddy/http-optional/redirect.caddy:ro
       - ./.omb-local-tls/server.crt:/etc/caddy/local-certs/server.crt:ro
       - ./.omb-local-tls/server.key:/etc/caddy/local-certs/server.key:ro
+
+volumes:
+  caddy_data:
+  caddy_config:

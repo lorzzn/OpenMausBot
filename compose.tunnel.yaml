@@ -1,10 +1,10 @@
-# Add this overlay to compose.yaml + compose.vm.yaml + compose.https.yaml.
-# The public hostname and local certificate are described in deploy/local/README.md.
+# Add this overlay to compose.yaml + compose.vm.yaml.
+# Cloudflare provides public HTTPS and connects directly to the HTTP app.
 services:
   omb:
     environment:
-      OMB_PUBLIC_URL: https://omb.oomdev.de5.net
-      OMB_WEBHOOK_PUBLIC_URL: https://omb.oomdev.de5.net
+      OMB_PUBLIC_URL: "${OMB_PUBLIC_URL:?Set OMB_PUBLIC_URL to your public HTTPS URL}"
+      OMB_WEBHOOK_PUBLIC_URL: "${OMB_WEBHOOK_PUBLIC_URL:-${OMB_PUBLIC_URL:?Set OMB_PUBLIC_URL to your public HTTPS URL}}"
 
   cloudflared:
     image: cloudflare/cloudflared:2026.9.3
@@ -14,19 +14,12 @@ services:
     command:
       - tunnel
       - --url
-      - https://localhost:443
-      - --origin-server-name
-      - localhost
-      - --origin-ca-pool
-      - /etc/cloudflared/rootCA.crt
+      - http://127.0.0.1:8799
       - run
       - --token-file
       - /run/secrets/tunnel-token
     volumes:
       - ./.omb-cloudflare/tunnel-token:/run/secrets/tunnel-token:ro
-      - ./.omb-local-tls/rootCA.crt:/etc/cloudflared/rootCA.crt:ro
     depends_on:
       omb:
         condition: service_healthy
-      caddy:
-        condition: service_started

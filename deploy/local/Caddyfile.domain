@@ -1,0 +1,12 @@
+{
+	admin off
+}
+
+import /etc/caddy/Caddyfile.routes
+
+{$OMB_DOMAIN} {
+	map {host} {upstream_scheme} {
+		default https
+	}
+	import omb_routes
+}
