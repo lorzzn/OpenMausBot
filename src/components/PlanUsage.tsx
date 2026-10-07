@@ -1,5 +1,5 @@
 // Settings → Usage: remaining subscription allowance. This is not the token
-// ledger below it — each provider reports its own 5-hour and weekly windows.
+// ledger below it — each provider reports its own allowance and reset windows.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { api } from "@/state/store";
@@ -86,7 +86,15 @@ function usageTone(used: number): string {
 function windowLabel(label: string): string {
   if (label === "5-hour") return t("planUsage.fiveHour");
   if (label === "Weekly") return t("planUsage.weekly");
+  if (label === "Monthly") return t("planUsage.monthly");
+  if (label === "Quota") return t("planUsage.quota");
   return label;
+}
+
+function modelLabel(name: string, driver: string): string {
+  if (driver === "cursor" && name === "Cursor Models") return t("planUsage.cursorModels");
+  if (driver === "cursor" && name === "Other Models") return t("planUsage.otherModels");
+  return name;
 }
 
 function WindowRow({
@@ -94,11 +102,13 @@ function WindowRow({
   window,
   now,
   usedHeadline = false,
+  ariaLabel,
 }: {
   label: string;
   window: PlanWindow;
   now: number;
   usedHeadline?: boolean;
+  ariaLabel?: string;
 }) {
   const when = window.available ? formatResetDistance(window.resetsAt, now) : null;
   const used = window.usedPercent ?? 0;
@@ -117,7 +127,7 @@ function WindowRow({
           <div
             className="mt-1 h-1.5 overflow-hidden rounded-full bg-inset"
             role="meter"
-            aria-label={label}
+            aria-label={ariaLabel ?? label}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round(Math.min(100, Math.max(0, used)))}
@@ -199,8 +209,14 @@ export function PlanUsage() {
               </div>
               {provider.ok ? (
                 <div className="flex flex-col gap-2">
-                  <WindowRow label={t("planUsage.fiveHour")} window={provider.fiveHour} now={now} />
-                  <WindowRow label={t("planUsage.weekly")} window={provider.weekly} now={now} />
+                  {(!["cursor", "antigravity"].includes(provider.driver) || provider.fiveHour.available) && <WindowRow label={t("planUsage.fiveHour")} window={provider.fiveHour} now={now} />}
+                  {(!["cursor", "antigravity"].includes(provider.driver) || provider.weekly.available) && <WindowRow label={t("planUsage.weekly")} window={provider.weekly} now={now} />}
+                  {provider.driver === "cursor" && !provider.weekly.available && provider.extra.length === 0 && (provider.models ?? []).length === 0 && (
+                    <WindowRow label={t("planUsage.monthly")} window={provider.fiveHour} now={now} />
+                  )}
+                  {provider.driver === "antigravity" && provider.extra.length === 0 && (provider.models ?? []).length === 0 && (
+                    <p className="text-[12px] text-ink-secondary">{t("planUsage.notReported")}</p>
+                  )}
                   {provider.extra.map((extra, index) => (
                     <WindowRow
                       key={`${extra.label}-${index}`}
@@ -216,16 +232,17 @@ export function PlanUsage() {
                   ))}
                   {(provider.models ?? []).length > 0 && (
                     <div className="mt-1 flex flex-col gap-2">
-                      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">{t("planUsage.byModel")}</div>
+                      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-secondary">{t(["cursor", "antigravity"].includes(provider.driver) ? "planUsage.byPool" : "planUsage.byModel")}</div>
                       {(provider.models ?? []).map((model) => (
                         <div key={model.name} className="flex flex-col gap-1">
-                          <div className="truncate text-[13px] font-medium text-ink">{model.name}</div>
+                          <div className="truncate text-[13px] font-medium text-ink">{modelLabel(model.name, provider.driver)}</div>
                           {model.windows.map((entry, index) => (
                             <WindowRow
                               key={`${model.name}-${entry.label}-${index}`}
                               label={windowLabel(entry.label)}
                               now={now}
-                              usedHeadline
+                              usedHeadline={!["cursor", "antigravity"].includes(provider.driver)}
+                              ariaLabel={`${modelLabel(model.name, provider.driver)} ${windowLabel(entry.label)}`}
                               window={{
                                 available: true,
                                 remainingPercent: entry.remainingPercent,

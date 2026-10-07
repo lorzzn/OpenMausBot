@@ -1,7 +1,7 @@
 // Subscription allowance for the engines OpenMausBot already signs in
-// (Claude, Codex, Grok). Parsers are pure. The fetcher takes fetch and a
+// (Claude, Codex, Grok, Cursor, Antigravity). Parsers are pure. The fetcher takes fetch and a
 // credential reader so tests never touch the network or a real login file.
-// Access tokens stay in the request header only — never in the JSON result.
+// Credentials stay on the server, in provider requests — never in the JSON result.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
@@ -9,9 +9,10 @@ import { join } from "node:path";
 import type { InstanceConfigMap } from "./contracts.ts";
 import { resolveClaudeConfigDir } from "./drivers/claude.ts";
 import { codexHome } from "./drivers/codex-identity.ts";
-import { harnessHome } from "./env-path.ts";
+import { antigravityProfileDirectory } from "./drivers/antigravity-acp.ts";
+import { harnessHome, userHome } from "./env-path.ts";
 
-export type PlanDriver = "claude" | "codex" | "grok";
+export type PlanDriver = "claude" | "codex" | "grok" | "cursor" | "antigravity";
 
 export interface PlanWindow {
   available: boolean;
@@ -72,6 +73,10 @@ export interface PlanCredential {
   token: string | null;
   accountId: string | null;
   expired: boolean;
+  /** Cursor user API keys must be exchanged for a short-lived access token. */
+  apiKey?: string;
+  teamId?: number;
+  googleOAuth?: { clientId: string; clientSecret: string; refreshToken: string; projectId: string };
 }
 
 export interface CredentialReader {
@@ -86,7 +91,7 @@ export interface PlanResponse {
 
 export type PlanFetch = (
   url: string,
-  init: { headers: Record<string, string>; signal: AbortSignal },
+  init: { headers: Record<string, string>; signal: AbortSignal; method?: "POST"; body?: string },
 ) => Promise<PlanResponse>;
 
 export interface PlanUsageDeps {
@@ -102,6 +107,9 @@ export interface CredentialSource {
   now?: () => number;
   /** macOS login keychain, read-only. Tests inject this so `security` is never spawned. */
   readClaudeKeychain?: (service: string) => string | null | Promise<string | null>;
+  readCursorKeychain?: (service: string) => string | null | Promise<string | null>;
+  platform?: NodeJS.Platform;
+  dataDir?: string;
 }
 
 const PROVIDER_TIMEOUT_MS = 8_000;
@@ -117,6 +125,11 @@ const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const GROK_CREDITS_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
 const GROK_BILLING_URL = "https://cli-chat-proxy.grok.com/v1/billing";
 const GROK_SETTINGS_URL = "https://cli-chat-proxy.grok.com/v1/settings";
+// The same read-only Connect RPCs used by the native Cursor CLI/dashboard.
+const CURSOR_DASHBOARD_URL = "https://api2.cursor.sh/aiserver.v1.DashboardService";
+const CURSOR_API_KEY_URL = "https://api2.cursor.sh/auth/exchange_user_api_key";
+const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const ANTIGRAVITY_API_URL = "https://cloudcode-pa.googleapis.com/v1internal";
 
 const FIVE_HOUR_MIN_SECONDS = 3 * 3600;
 const FIVE_HOUR_MAX_SECONDS = 8 * 3600;
@@ -129,12 +142,16 @@ const DRIVER_OF: Record<string, PlanDriver> = {
   claudeAgent: "claude",
   codex: "codex",
   grokAgent: "grok",
+  cursorAgent: "cursor",
+  antigravityAgent: "antigravity",
 };
 
 const PRODUCT_NAME: Record<PlanDriver, string> = {
   claude: "Claude",
   codex: "Codex",
   grok: "Grok",
+  cursor: "Cursor",
+  antigravity: "Antigravity",
 };
 
 export function planAccountsFromInstances(instances: InstanceConfigMap): PlanAccount[] {
@@ -221,6 +238,115 @@ export function parseGrokUsage(credits: unknown, billing?: unknown, settings?: u
   return { plan: grokPlan(settings), fiveHour, weekly, extra, models };
 }
 
+export function parseCursorUsage(body: unknown, planBody?: unknown): PlanWindows {
+  const root = asRecord(body);
+  const info = asRecord(asRecord(planBody)?.planInfo);
+  const usage = asRecord(root?.planUsage);
+  const weekly = info?.includedUsagePeriod === "INCLUDED_USAGE_PERIOD_WEEKLY" || info?.includedUsagePeriod === 2;
+  const label = weekly ? "Weekly" : "Monthly";
+  const resetsAt = isoOrNull(info?.includedUsageResetsAt ?? root?.billingCycleEnd ?? info?.billingCycleEnd);
+  const windows: PlanWindows = {
+    plan: planLabel(info?.planName), fiveHour: closedWindow(), weekly: closedWindow(), extra: [], models: [],
+  };
+  if (!usage || root?.enabled === false) return windows;
+
+  // Cursor's two model pools have different allowances. Its reported percentages
+  // take precedence over legacy dollar limits, which omit the bonus allowance.
+  const hasPools = finiteNumber(usage.autoPercentUsed) != null || finiteNumber(usage.apiPercentUsed) != null;
+  const totalUsed = finiteNumber(usage.totalPercentUsed) ?? (hasPools ? null : cursorBudgetPercent(usage.totalSpend, usage.limit));
+  if (totalUsed != null) {
+    const window = openWindow(totalUsed, resetsAt);
+    if (weekly) windows.weekly = window;
+    else windows.extra.push(extraLine(label, window));
+  }
+  for (const [name, percent, spent, limit] of [
+    ["Cursor Models", usage.autoPercentUsed, usage.autoSpend, usage.autoLimit],
+    ["Other Models", usage.apiPercentUsed, usage.apiSpend, usage.apiLimit],
+  ] as const) {
+    const used = finiteNumber(percent) ?? cursorBudgetPercent(spent, limit);
+    if (used != null) windows.models.push({ name, windows: [extraLine(label, openWindow(used, resetsAt))] });
+  }
+  return windows;
+}
+
+function cursorBudgetPercent(spent: unknown, limit: unknown): number | null {
+  const budget = finiteNumber(limit);
+  const used = finiteNumber(spent);
+  // Proto JSON omits zero scalar fields. A positive reported limit distinguishes
+  // an untouched allowance from an unknown or unlimited one.
+  if (budget == null || budget <= 0 || (spent !== undefined && (used == null || used < 0))) return null;
+  return ((used ?? 0) / budget) * 100;
+}
+
+/** Google's quota summary reports distinct model pools; none is an account
+ * total. Preserve each pool's 5-hour and weekly window instead of averaging. */
+export function parseAntigravityUsage(body: unknown, planBody?: unknown): PlanWindows {
+  const root = asRecord(body);
+  const plan = asRecord(planBody);
+  const tier = asRecord(plan?.paidTier) ?? asRecord(plan?.currentTier);
+  const windows: PlanWindows = { plan: planLabel(tier?.name) ?? planLabel(tier?.id),
+    fiveHour: closedWindow(), weekly: closedWindow(), extra: [], models: [] };
+  if (!root) return windows;
+  const addBucket = (name: string, raw: unknown) => {
+    const bucket = asRecord(raw);
+    if (!bucket || bucket.disabled === true) return;
+    const resetsAt = isoOrNull(bucket.resetTime);
+    // Google proto JSON omits a zero float. A named, scheduled bucket with no
+    // remainingFraction is exhausted; an empty/malformed response is unknown.
+    const remaining = finiteNumber(bucket.remainingFraction)
+      ?? (bucket.remainingFraction === undefined && resetsAt && planLabel(bucket.bucketId) ? 0 : null);
+    if (remaining == null || remaining < 0 || remaining > 1) return;
+    const label = bucket.window === "5h" ? "5-hour" : bucket.window === "weekly" ? "Weekly"
+      : bucket.window === "monthly" ? "Monthly" : "Quota";
+    addModelWindow(windows.models, name, extraLine(label, openWindow((1 - remaining) * 100, resetsAt)));
+  };
+  if (Array.isArray(root.groups)) {
+    for (const raw of root.groups) {
+      const group = asRecord(raw);
+      const name = planLabel(group?.displayName);
+      if (!name || !Array.isArray(group?.buckets)) continue;
+      for (const bucket of group.buckets) addBucket(name, bucket);
+    }
+  } else if (Array.isArray(root.buckets)) {
+    for (const raw of root.buckets) {
+      const bucket = asRecord(raw);
+      const name = planLabel(bucket?.displayName) ?? planLabel(bucket?.bucketId);
+      if (name) addBucket(name, bucket);
+    }
+  }
+  // Older backends may only support fetchAvailableModels. Use their curated
+  // agent list and omit hidden tab-completion models and duplicate aliases.
+  if (windows.models.length === 0) {
+    const models = asRecord(root.models);
+    const ids = new Set<string>();
+    if (Array.isArray(root.agentModelSorts)) {
+      for (const sort of root.agentModelSorts) {
+        const groups = asRecord(sort)?.groups;
+        if (!Array.isArray(groups)) continue;
+        for (const group of groups) {
+          const modelIds = asRecord(group)?.modelIds;
+          if (Array.isArray(modelIds)) for (const id of modelIds) if (typeof id === "string") ids.add(id);
+        }
+      }
+    } else if (models) {
+      for (const [id, model] of Object.entries(models)) if (planLabel(asRecord(model)?.displayName)) ids.add(id);
+    }
+    for (const id of ids) {
+      const model = asRecord(models?.[id]);
+      const name = planLabel(model?.displayName) ?? planLabel(id);
+      const quota = asRecord(model?.quotaInfo);
+      const resetsAt = isoOrNull(quota?.resetTime);
+      const remaining = finiteNumber(quota?.remainingFraction)
+        ?? (quota && quota.remainingFraction === undefined && resetsAt ? 0 : null);
+      if (!name || remaining == null || remaining < 0 || remaining > 1) continue;
+      if (windows.models.some((entry) => entry.name.toLowerCase() === name.toLowerCase())) continue;
+      addModelWindow(windows.models, name, extraLine("Quota", openWindow((1 - remaining) * 100, resetsAt)));
+    }
+  }
+  sortModelWindows(windows.models);
+  return windows;
+}
+
 export function fileCredentialReader(source: CredentialSource): CredentialReader {
   const env = source.env ?? process.env;
   const now = source.now ?? Date.now;
@@ -230,6 +356,8 @@ export function fileCredentialReader(source: CredentialSource): CredentialReader
       const at = now();
       if (account.driver === "claude") return readClaudeCredential(account, merged, source, at);
       if (account.driver === "codex") return readCodexCredential(merged, source.readText, at);
+      if (account.driver === "cursor") return readCursorCredential(merged, source, at);
+      if (account.driver === "antigravity") return readAntigravityCredential(account, source);
       return readGrokCredential(merged, source.readText, at);
     },
   };
@@ -247,7 +375,10 @@ export function defaultCredentialReader(env: NodeJS.ProcessEnv = process.env): C
         return null;
       }
     },
-    ...(process.platform === "darwin" ? { readClaudeKeychain: readDarwinClaudeKeychain } : {}),
+    ...(process.platform === "darwin" ? {
+      readClaudeKeychain: readDarwinClaudeKeychain,
+      readCursorKeychain: (service: string) => readDarwinKeychain(service, "cursor-user"),
+    } : {}),
   });
 }
 
@@ -649,13 +780,13 @@ function claudeKeychainServices(account: PlanAccount, env: NodeJS.ProcessEnv, re
   return [`${CLAUDE_KEYCHAIN_SERVICE}-${suffix}`];
 }
 
-function readDarwinClaudeKeychain(service: string): Promise<string | null> {
+function readDarwinKeychain(service: string, account?: string): Promise<string | null> {
   if (process.platform !== "darwin") return Promise.resolve(null);
   return new Promise((resolve) => {
     try {
       execFile(
         "security",
-        ["find-generic-password", "-s", service, "-w"],
+        ["find-generic-password", "-s", service, ...(account ? ["-a", account] : []), "-w"],
         {
           timeout: KEYCHAIN_TIMEOUT_MS,
           maxBuffer: KEYCHAIN_MAX_BUFFER,
@@ -671,6 +802,10 @@ function readDarwinClaudeKeychain(service: string): Promise<string | null> {
       resolve(null);
     }
   });
+}
+
+function readDarwinClaudeKeychain(service: string): Promise<string | null> {
+  return readDarwinKeychain(service);
 }
 
 async function readClaudeCredential(
@@ -718,6 +853,66 @@ function readCodexCredential(
   if (expiry != null && expiry <= now) return expiredCredential();
   const accountId = secretString(tokens?.account_id) ?? secretString(root.account_id);
   return { token, accountId, expired: false };
+}
+
+async function readCursorCredential(env: NodeJS.ProcessEnv, source: CredentialSource, now: number): Promise<PlanCredential> {
+  const platform = source.platform ?? process.platform;
+  const home = platform === "win32" ? env.USERPROFILE || env.HOME || userHome(env) : userHome(env);
+  const configDir = env.CURSOR_CONFIG_DIR?.trim() || (env.XDG_CONFIG_HOME?.trim()
+    ? join(env.XDG_CONFIG_HOME.trim(), "cursor") : join(home, ".cursor"));
+  const config = asRecord(parseJson(source.readText(join(configDir, "cli-config.json"))));
+  const activeTeamId = asRecord(config?.authInfo)?.activeTeamId;
+  const team = typeof activeTeamId === "number" && Number.isSafeInteger(activeTeamId) && activeTeamId > 0
+    ? { teamId: activeTeamId } : {};
+  const explicitToken = secretString(env.CURSOR_AUTH_TOKEN);
+  if (explicitToken) return { token: explicitToken, accountId: null, expired: cursorTokenExpired(explicitToken, now), ...team };
+
+  const explicitKey = secretString(env.CURSOR_API_KEY);
+  let token: string | null = null;
+  let storedKey: string | null = null;
+  if (env.AGENT_CLI_CREDENTIAL_STORE !== "memory") {
+    if (platform === "darwin" && env.AGENT_CLI_CREDENTIAL_STORE !== "file") {
+      if (source.readCursorKeychain) {
+        token = secretString(await source.readCursorKeychain("cursor-access-token"));
+        storedKey = secretString(await source.readCursorKeychain("cursor-api-key"));
+      }
+    } else {
+      const dir = platform === "win32" ? join(env.APPDATA || join(home, "AppData", "Roaming"), "Cursor")
+        : platform === "darwin" ? join(home, ".cursor")
+          : join(env.XDG_CONFIG_HOME || join(home, ".config"), "cursor");
+      const auth = asRecord(parseJson(source.readText(join(dir, "auth.json"))));
+      token = secretString(auth?.accessToken);
+      storedKey = secretString(auth?.apiKey);
+    }
+  }
+  // An explicit API key must not accidentally query another CLI login's plan.
+  if (explicitKey && storedKey !== explicitKey) token = null;
+  const apiKey = explicitKey ?? storedKey;
+  return { token, accountId: null, expired: token != null && cursorTokenExpired(token, now),
+    ...(apiKey ? { apiKey } : {}), ...team };
+}
+
+function cursorTokenExpired(token: string, now: number): boolean {
+  try {
+    const payload = asRecord(JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8")));
+    const expiry = finiteNumber(payload?.exp);
+    return expiry != null && expiry * 1000 <= now;
+  } catch {
+    return false;
+  }
+}
+
+function readAntigravityCredential(account: PlanAccount, source: CredentialSource): PlanCredential {
+  // Follow the official ACP driver's per-instance profile. A user's global
+  // Google/Gemini credentials must never be used for a different account here.
+  const file = join(antigravityProfileDirectory(account.id, source.dataDir), "antigravity-acp", "acp_token.json");
+  const auth = asRecord(parseJson(source.readText(file)));
+  const clientId = secretString(auth?.client_id);
+  const clientSecret = secretString(auth?.client_secret);
+  const refreshToken = secretString(auth?.refresh_token);
+  const projectId = secretString(auth?.project_id);
+  if (!clientId || !clientSecret || !refreshToken || !projectId) return missingCredential();
+  return { token: null, accountId: null, expired: false, googleOAuth: { clientId, clientSecret, refreshToken, projectId } };
 }
 
 interface GrokCandidate {
@@ -800,8 +995,11 @@ async function fetchProvider(account: PlanAccount, deps: PlanUsageDeps): Promise
   } catch {
     return errorRow(account, signInAgain(account.driver));
   }
-  if (credential.expired || !credential.token) return errorRow(account, signInAgain(account.driver));
   try {
+    if (account.driver === "antigravity") return await fetchAntigravity(account, credential, deps);
+    if (account.driver === "cursor" && credential.apiKey) return await fetchCursor(account, credential, deps);
+    if (credential.expired || !credential.token) return errorRow(account, signInAgain(account.driver));
+    if (account.driver === "cursor") return await fetchCursor(account, credential, deps);
     if (account.driver === "claude") return await fetchClaude(account, credential.token, deps);
     if (account.driver === "codex") return await fetchCodex(account, credential.token, credential.accountId, deps);
     return await fetchGrok(account, credential.token, deps);
@@ -821,9 +1019,11 @@ async function fetchJson(
   url: string,
   headers: Record<string, string>,
   timeoutMs: number,
+  postBody?: string,
 ): Promise<HttpResult> {
   try {
-    const response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+    const response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(timeoutMs),
+      ...(postBody !== undefined ? { method: "POST" as const, body: postBody } : {}) });
     let text = "";
     try {
       text = await response.text();
@@ -904,4 +1104,65 @@ async function fetchGrok(account: PlanAccount, token: string, deps: PlanUsageDep
   }
   const windows = parseGrokUsage(creditsBody, billingBody ?? undefined, settings.ok ? settings.body : undefined);
   return okRow(account, windows);
+}
+
+async function fetchCursor(account: PlanAccount, credential: PlanCredential, deps: PlanUsageDeps): Promise<PlanProviderRow> {
+  const timeout = deps.timeoutMs ?? PROVIDER_TIMEOUT_MS;
+  let token = credential.expired ? null : credential.token;
+  if (!token && credential.apiKey) {
+    const exchange = await fetchJson(deps.fetch, CURSOR_API_KEY_URL, {
+      Authorization: `Bearer ${credential.apiKey}`, "Content-Type": "application/json",
+    }, timeout, "{}");
+    if (authRejected(exchange.status)) return errorRow(account, signInAgain("cursor"));
+    if (!exchange.ok) return errorRow(account, couldNotReach("cursor"));
+    token = secretString(asRecord(exchange.body)?.accessToken);
+  }
+  if (!token) return errorRow(account, signInAgain("cursor"));
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`, "Content-Type": "application/json",
+    "Connect-Protocol-Version": "1", "x-cursor-client-type": "cli",
+  };
+  if (credential.teamId) headers["x-cursor-team-id"] = String(credential.teamId);
+  const usageBody = credential.teamId ? JSON.stringify({ teamId: credential.teamId, includePooledUsage: true }) : "{}";
+  const [usage, plan] = await Promise.all([
+    fetchJson(deps.fetch, `${CURSOR_DASHBOARD_URL}/GetCurrentPeriodUsage`, headers, timeout, usageBody),
+    fetchJson(deps.fetch, `${CURSOR_DASHBOARD_URL}/GetPlanInfo`, headers, timeout, "{}"),
+  ]);
+  if (authRejected(usage.status)) return errorRow(account, signInAgain("cursor"));
+  if (!usage.ok || !asRecord(usage.body)) {
+    return errorRow(account, usage.status === 0 || usage.status >= 500 ? couldNotReach("cursor") : unexpectedUsage("cursor"));
+  }
+  return okRow(account, parseCursorUsage(usage.body, plan.ok ? plan.body : undefined));
+}
+
+async function fetchAntigravity(account: PlanAccount, credential: PlanCredential, deps: PlanUsageDeps): Promise<PlanProviderRow> {
+  const oauth = credential.googleOAuth;
+  if (!oauth) return errorRow(account, signInAgain("antigravity"));
+  const timeout = deps.timeoutMs ?? PROVIDER_TIMEOUT_MS;
+  const exchange = await fetchJson(deps.fetch, GOOGLE_TOKEN_URL, { "Content-Type": "application/x-www-form-urlencoded" }, timeout,
+    new URLSearchParams({ grant_type: "refresh_token", client_id: oauth.clientId,
+      client_secret: oauth.clientSecret, refresh_token: oauth.refreshToken }).toString());
+  if (authRejected(exchange.status) || asRecord(exchange.body)?.error === "invalid_grant") {
+    return errorRow(account, signInAgain("antigravity"));
+  }
+  const token = exchange.ok ? secretString(asRecord(exchange.body)?.access_token) : null;
+  if (!token) return errorRow(account, couldNotReach("antigravity"));
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "User-Agent": "antigravity/acp (OpenMausBot)" };
+  const projectBody = JSON.stringify({ project: oauth.projectId });
+  const [usage, plan] = await Promise.all([
+    fetchJson(deps.fetch, `${ANTIGRAVITY_API_URL}:retrieveUserQuotaSummary`, headers, timeout, projectBody),
+    fetchJson(deps.fetch, `${ANTIGRAVITY_API_URL}:loadCodeAssist`, headers, timeout, JSON.stringify({ metadata: { ideType: "ANTIGRAVITY" } })),
+  ]);
+  if (usage.ok && asRecord(usage.body)) return okRow(account, parseAntigravityUsage(usage.body, plan.ok ? plan.body : undefined));
+  if (usage.status === 401) return errorRow(account, signInAgain("antigravity"));
+  if (![403, 404, 405, 501].includes(usage.status)) {
+    return errorRow(account, usage.status === 0 || usage.status >= 500 ? couldNotReach("antigravity") : unexpectedUsage("antigravity"));
+  }
+  // The summary endpoint is newer than model discovery; keep old accounts usable.
+  const models = await fetchJson(deps.fetch, `${ANTIGRAVITY_API_URL}:fetchAvailableModels`, headers, timeout, projectBody);
+  if (authRejected(models.status)) return errorRow(account, signInAgain("antigravity"));
+  if (!models.ok || !asRecord(models.body)) {
+    return errorRow(account, models.status === 0 || models.status >= 500 ? couldNotReach("antigravity") : unexpectedUsage("antigravity"));
+  }
+  return okRow(account, parseAntigravityUsage(models.body, plan.ok ? plan.body : undefined));
 }

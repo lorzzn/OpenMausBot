@@ -105,6 +105,10 @@ The [Connected Apps OAuth fixture](connected-apps-oauth.md) checks blocked-popup
 recovery, safe authorization links and abandoned-account retries through real
 renderer components and isolated HTTP routes.
 
+The [plan usage fixture](plan-usage.md) checks Cursor and Antigravity allowance,
+quota pools, refresh/cache behavior, unavailable data and expired logins through
+the real usage component with synthetic provider responses and an isolated app.
+
 The [desktop server connection smoke](desktop-server-connection.md) mounts the
 real Settings connection component in disposable Electron windows.
 

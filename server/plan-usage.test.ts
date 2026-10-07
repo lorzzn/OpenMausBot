@@ -34,7 +34,7 @@ function jsonResponse(body: unknown, status = 200): PlanResponse {
 function account(driver: PlanAccount["driver"], extras: Partial<PlanAccount> = {}): PlanAccount {
   return {
     id: driver,
-    name: driver === "claude" ? "Claude" : driver === "codex" ? "Codex" : "Grok",
+    name: { claude: "Claude", codex: "Codex", grok: "Grok", cursor: "Cursor", antigravity: "Antigravity" }[driver],
     driver,
     environment: {},
     ...extras,
@@ -404,17 +404,20 @@ describe("plan usage fetcher", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it("lists configured Claude, Codex, and Grok accounts and skips other engines", () => {
+  it("lists configured subscription accounts and skips API engines", () => {
     expect(planAccountsFromInstances({
       claude: { driver: "claudeAgent", displayName: "  Personal Claude  ", config: { configDir: "/tmp/claude" } },
       codex: { driver: "codex" },
       grok: { driver: "grokAgent", environment: { GROK_HOME: "/tmp/grok" } },
       cursor: { driver: "cursorAgent", displayName: "Cursor" },
+      antigravity: { driver: "antigravityAgent", displayName: "Antigravity" },
       api: { driver: "grok", displayName: "Grok API" },
     })).toEqual([
       { id: "claude", name: "Personal Claude", driver: "claude", environment: {}, configDir: "/tmp/claude" },
       { id: "codex", name: "Codex", driver: "codex", environment: {} },
       { id: "grok", name: "Grok", driver: "grok", environment: { GROK_HOME: "/tmp/grok" } },
+      { id: "cursor", name: "Cursor", driver: "cursor", environment: {} },
+      { id: "antigravity", name: "Antigravity", driver: "antigravity", environment: {} },
     ]);
   });
 });
