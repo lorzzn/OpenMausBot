@@ -5,7 +5,7 @@
 // a fixed argument list, and the binary is found on the engines' PATH
 // afterwards because that directory is registered ahead of everything else.
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { EngineInstall } from "./contracts.ts";
 import { DATA_DIR, stripWorkspaceCredentialEnv } from "./config.ts";
@@ -24,6 +24,19 @@ export function enginesPrefix(baseDir = DATA_DIR): string {
 /** Where that prefix puts executables: `bin/` on POSIX, the prefix itself on Windows. */
 export function enginesBinDir(baseDir = DATA_DIR, platform: NodeJS.Platform = process.platform): string {
   return platform === "win32" ? enginesPrefix(baseDir) : join(enginesPrefix(baseDir), "bin");
+}
+
+/** A self-updater such as `claude update` asks npm where global packages
+ * live. For a copy installed here that is this prefix, not npm's default
+ * (a root-owned /usr/local in the Docker image), so point npm at it. */
+export function withEnginesNpmPrefix(cli: string, env: NodeJS.ProcessEnv, baseDir = DATA_DIR): NodeJS.ProcessEnv {
+  const resolved = findCliCandidates(cli)[0];
+  if (!resolved || resolve(dirname(resolved)) !== resolve(enginesBinDir(baseDir))) return env;
+  const next: NodeJS.ProcessEnv = { ...env };
+  // npm reads its config from env case-insensitively; leave only ours.
+  for (const key of Object.keys(next)) if (key.toLowerCase() === "npm_config_prefix") delete next[key];
+  next.npm_config_prefix = enginesPrefix(baseDir);
+  return next;
 }
 
 /** Called once at boot: engines installed here win over any other copy on PATH. */

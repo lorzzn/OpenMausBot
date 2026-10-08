@@ -202,7 +202,7 @@ import {
 import { sweepThreadEventLogs, type ThreadLogRetentionCandidate } from "./thread-retention.ts";
 import { ComputerControl } from "./computer-control.ts";
 import { augmentedPath, findCliCandidates, resetPathCache } from "./env-path.ts";
-import { registerEnginesBinDir } from "./engine-install.ts";
+import { registerEnginesBinDir, withEnginesNpmPrefix } from "./engine-install.ts";
 import { appendUsage, parseUsageRange, readUsage, summarizeUsage, usageCsv, USAGE_GROUPINGS, flushUsageLedger, type UsageGroupBy, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
 import { loadPlanUsage, planAccountsFromInstances } from "./plan-usage.ts";
 import { GroupUsageReader } from "./group-thread-usage.ts";
@@ -24103,7 +24103,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
       claudeUpdatesInFlight.add(target.cli);
       try {
-        const result = await updateClaudeCli(target.cli, cliProbeEnvironment());
+        const result = await updateClaudeCli(target.cli, withEnginesNpmPrefix(target.cli, cliProbeEnvironment()));
         resetPathCache();
         return json(res, 200, { ok: true, version: result.version });
       } catch (error) {

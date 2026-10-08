@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFil
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { enginesBinDir, enginesPrefix, installNpmEngine, npmPackageOf, serverInstallFor } from "./engine-install.ts";
+import { enginesBinDir, enginesPrefix, installNpmEngine, npmPackageOf, serverInstallFor, withEnginesNpmPrefix } from "./engine-install.ts";
 import { augmentedPath, findCliCandidates, registerPathDir, resetPathCacheForTests } from "./env-path.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 import * as procs from "./procs.ts";
@@ -92,6 +92,30 @@ describe("npm package detection", () => {
   it("lays the prefix out per platform", () => {
     expect(enginesBinDir("/data", "linux")).toBe(join("/data", "tools", "npm", "bin"));
     expect(enginesBinDir("/data", "win32")).toBe(enginesPrefix("/data"));
+  });
+});
+
+describe.skipIf(process.platform === "win32")("npm prefix for self-updaters", () => {
+  const { ctx } = useFakeNpm();
+  const writeCli = (dir: string) => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "claude"), "#!/bin/sh\n", { mode: 0o755 });
+  };
+
+  it("points npm at the app's prefix for a copy installed there, replacing any other prefix", () => {
+    writeCli(enginesBinDir(ctx.base));
+    registerPathDir(enginesBinDir(ctx.base));
+    const env = withEnginesNpmPrefix("claude", { PATH: "/bin", NPM_CONFIG_PREFIX: "/usr/local" }, ctx.base);
+    expect(env).toEqual({ PATH: "/bin", npm_config_prefix: enginesPrefix(ctx.base) });
+    expect(withEnginesNpmPrefix(join(enginesBinDir(ctx.base), "claude"), {}, ctx.base))
+      .toEqual({ npm_config_prefix: enginesPrefix(ctx.base) });
+  });
+
+  it("leaves the environment alone for a copy npm installed elsewhere, or none at all", () => {
+    writeCli(ctx.binDir);
+    const env = { PATH: "/bin", npm_config_prefix: "/home/me/.npm-global" };
+    expect(withEnginesNpmPrefix("claude", env, ctx.base)).toBe(env);
+    expect(withEnginesNpmPrefix("no-such-cli", env, ctx.base)).toBe(env);
   });
 });
 
