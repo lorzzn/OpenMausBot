@@ -8,7 +8,9 @@
 //                     mcp-elicitation | mcp-app-approval | mcp-form | permissions-approval | question |
 //                     multi-question | mixed-question | empty-question | malformed-question | config-profile |
 //                     config-profile-unsupported | config-read-error | image |
-//                     logged-in-stdout | logged-out | unauthorized | late-request
+//                     logged-in-stdout | logged-out | unauthorized | late-request |
+//                     retry-then-complete | signin-refused | auth-recovery | mcp-401 | legacy-error |
+//                     key-401 | recovered-403 | recovered-401 | recovering-403
 //   FAKE_CODEX_LAUNCH_CRASHES  die at turn/start (before ack) with transient stderr,
 //                               exit 1, for the first N launches (launch count kept in
 //                               FAKE_CODEX_STATE)
@@ -29,6 +31,10 @@
 //   FAKE_CODEX_DUMP   path to write {pid, argv, env, calls, decision} as JSON
 //   FAKE_CODEX_IGNORE_FEATURES  "1": config/read reports no `-c features.*` override
 //                     (a Codex that did not take them)
+//   FAKE_CODEX_SHELL_ENVIRONMENT_POLICY  JSON the config/read shell_environment_policy
+//                     reports. Like codex-cli 0.160, every field is present and null
+//                     unless set (an object fills in its fields, `filters` table
+//                     included); a non-object (null, false, []) is reported as-is.
 //   FAKE_CODEX_APPROVAL_REQUEST JSON {method, params} override in approval mode
 //   FAKE_CODEX_ACCOUNT_EMAIL  synthetic ChatGPT identity (default ada@example.test)
 //   FAKE_CODEX_ACCOUNT_MODE   chatgpt (default) | api-key | none | unsupported | error | hang
@@ -106,6 +112,22 @@ for (let index = 0; process.env.FAKE_CODEX_MCP_OVERRIDES === "1" && index < proc
   const match = process.argv[index - 1] === "-c" ? /^mcp_servers\.([^.]+)\.([^.]+)=(.*)$/.exec(process.argv[index]!) : null;
   if (match) (mcpOverrides[match[1]!] ??= {})[match[2]!] = JSON.parse(match[3]!);
 }
+// codex-cli 0.160 config/read reports every shell_environment_policy field,
+// null when unset, even for an empty config.toml. A `-c
+// shell_environment_policy.exclude=[…]` override replaces the list and, as
+// there (codex-cli 0.160.1), drops the lower layers' `filters` table; their
+// `include_only` list stays.
+const shellExcludeOverride = process.argv.reduce<unknown>((found, arg, index) => {
+  const match = process.argv[index - 1] === "-c" ? /^shell_environment_policy\.exclude=(.*)$/.exec(arg) : null;
+  return match ? JSON.parse(match[1]!) : found;
+}, undefined);
+const shellEnvironmentPolicy = (): unknown => {
+  const unset = { inherit: null, ignore_default_excludes: null, exclude: null, set: null,
+    include_only: null, filters: null, experimental_use_profile: null };
+  const supplied: unknown = process.env.FAKE_CODEX_SHELL_ENVIRONMENT_POLICY ? JSON.parse(process.env.FAKE_CODEX_SHELL_ENVIRONMENT_POLICY) : {};
+  if (!supplied || typeof supplied !== "object" || Array.isArray(supplied)) return supplied;
+  return { ...unset, ...supplied, ...(shellExcludeOverride !== undefined ? { exclude: shellExcludeOverride, filters: null } : {}) };
+};
 let developerInstructions = "";
 let resumedThread: string | null = null;
 let decision: unknown = null;
@@ -368,9 +390,7 @@ process.stdin.on("data", (chunk) => {
                   },
                 }),
               developer_instructions: process.env.FAKE_CODEX_INSTRUCTIONS ?? null,
-              ...(process.env.FAKE_CODEX_SHELL_ENVIRONMENT_POLICY ? {
-                shell_environment_policy: JSON.parse(process.env.FAKE_CODEX_SHELL_ENVIRONMENT_POLICY),
-              } : {}),
+              shell_environment_policy: shellEnvironmentPolicy(),
               // `-c features.<name>=<bool>` overrides, as the real config/read reports them.
               features: Object.fromEntries(process.argv.flatMap((arg, index) => {
                 const match = process.argv[index - 1] === "-c" ? /^features\.(\w+)=(true|false)$/.exec(arg) : null;
@@ -509,6 +529,60 @@ process.stdin.on("data", (chunk) => {
         }
         if (msg.params?.permissions && (!experimentalApi || mode === "config-profile-unsupported")) {
           out({ jsonrpc: "2.0", id: msg.id, error: { code: -32602, message: "experimental API required for permissions" } });
+          break;
+        }
+        // Codex 0.160's ErrorNotification: {error: TurnError, willRetry}.
+        // Its own reconnects come first with willRetry: true; signin-refused
+        // replays an expired ChatGPT login (the 2026-10-07 report),
+        // auth-recovery a provider 401 after Codex tried to recover the
+        // sign-in, mcp-401 a tool's 401 inside an otherwise good turn, and
+        // legacy-error the bare {message} of Codex 0.144. key-401 replays a
+        // refused API key (a custom provider's, or an API-key login), and
+        // recovered-40x a recovery that succeeded before that failure,
+        // recovering-403 a 403 while the recovery is still unfinished.
+        if (mode === "retry-then-complete" || mode === "signin-refused") {
+          out({ jsonrpc: "2.0", id: msg.id, result: { turn: { id: nativeTurnId } } });
+          for (let attempt = 1; attempt <= 5; attempt++) {
+            notify("error", { willRetry: true, error: { message: `Reconnecting... ${attempt}/5`, codexErrorInfo: null, additionalDetails: "workspace routing discovery unauthorized (401)" } });
+          }
+          if (mode === "retry-then-complete") { finishTurn(); break; }
+          const error = { message: "workspace routing discovery unauthorized (401)", codexErrorInfo: "unauthorized", additionalDetails: null };
+          notify("error", { willRetry: false, error });
+          notify("turn/completed", { turn: { status: "failed", error } });
+          break;
+        }
+        if (mode === "auth-recovery") {
+          out({ jsonrpc: "2.0", id: msg.id, result: { turn: { id: nativeTurnId } } });
+          notify("modelProvider/authRecoveryStarted", { provider: "openai", message: "Refreshing sign-in" });
+          notify("turn/completed", { turn: { status: "failed", error: { message: "unexpected status 401 Unauthorized", codexErrorInfo: null } } });
+          break;
+        }
+        if (mode === "key-401") {
+          out({ jsonrpc: "2.0", id: msg.id, result: { turn: { id: nativeTurnId } } });
+          const error = { message: "unexpected status 401 Unauthorized: Incorrect API key provided", codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 401 } }, additionalDetails: null };
+          notify("error", { willRetry: false, error });
+          notify("turn/completed", { turn: { status: "failed", error } });
+          break;
+        }
+        const recovery = /^(recovered|recovering)-(401|403)$/.exec(mode);
+        if (recovery) {
+          out({ jsonrpc: "2.0", id: msg.id, result: { turn: { id: nativeTurnId } } });
+          notify("modelProvider/authRecoveryStarted", { provider: "openai", message: "Refreshing sign-in" });
+          if (recovery[1] === "recovered") notify("modelProvider/authRecoveryCompleted", { provider: "openai", message: "Signed in" });
+          const message = recovery[2] === "403" ? "unexpected status 403 Forbidden: unauthorized client" : "unexpected status 401 Unauthorized";
+          notify("turn/completed", { turn: { status: "failed", error: { message, codexErrorInfo: recovery[2] === "403" ? { responseStreamConnectionFailed: { httpStatusCode: 403 } } : null } } });
+          break;
+        }
+        if (mode === "mcp-401") {
+          out({ jsonrpc: "2.0", id: msg.id, result: { turn: { id: nativeTurnId } } });
+          notify("item/completed", { item: { id: "t1", type: "mcpToolCall", tool: "fetch", status: "failed", error: { message: "HTTP 401 Unauthorized: Please sign in again" } } });
+          finishTurn();
+          break;
+        }
+        if (mode === "legacy-error") {
+          out({ jsonrpc: "2.0", id: msg.id, result: { turn: { id: nativeTurnId } } });
+          notify("error", { message: "stream disconnected before completion" });
+          notify("turn/completed", { turn: { status: "failed", error: { message: "stream disconnected before completion" } } });
           break;
         }
         if (mode === "unauthorized") {
