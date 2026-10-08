@@ -1,0 +1,12 @@
+# Expose the host's /mnt (rclone cloud drives and other mounts) to the
+# OpenMausBot app only, read-write. Local VM desktops do not see it.
+# rslave propagates mounts made after the container starts, so a restarted
+# rclone mount shows up instead of an empty directory.
+services:
+  omb:
+    volumes:
+      - type: bind
+        source: /mnt
+        target: /mnt
+        bind:
+          propagation: rslave
