@@ -8,10 +8,12 @@ const INDEX = readFileSync(new URL("../../server/index.ts", import.meta.url), "u
 const EXACT: Record<string, number> = {
   // Internal harness routes have no server/routes module yet; moving them out is the follow-up that lowers this.
   // Local branch retains the VM viewer authorization and paired Full access
-  // routes, plus their admin audit match; all new routes still use the table.
+  // routes, plus their admin audit match, and the /hooks/ prefix that serves
+  // webhooks on the web port for single-port Docker deployments; all new
+  // routes still use the table.
   'path === "/': 165,
   "path.match(": 89,
-  "path.startsWith(": 11,
+  "path.startsWith(": 12,
   ".exec(path)": 19,
   ".test(path)": 1,
   ".includes(path)": 3,
