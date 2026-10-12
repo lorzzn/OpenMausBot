@@ -10,6 +10,8 @@ COPY cloudflare/control-plane/package.json ./cloudflare/control-plane/package.js
 COPY scripts/install-git-hooks.mjs ./scripts/install-git-hooks.mjs
 RUN pnpm install --frozen-lockfile
 COPY . .
+RUN node scripts/prepare-duckdb.mjs \
+  && node -e "require('node:fs').cpSync('dist-native/duckdb/' + process.platform + '-' + process.arch, '/src/duckdb', { recursive: true })"
 RUN pnpm build:server && pnpm exec vite build
 
 FROM ${BASE_IMAGE}
@@ -30,6 +32,8 @@ RUN if [ -n "$GROK_VERSION" ]; then \
       && rm -rf /tmp/grok-install; \
     fi
 USER maus
+ENV OMB_DUCKDB_DIR=/app/duckdb
+COPY --from=build --chown=maus:maus /src/duckdb /app/duckdb
 COPY --from=build --chown=maus:maus /src/dist-server /app/dist-server
 COPY --from=build --chown=maus:maus /src/dist /app/dist
 COPY --from=build --chown=maus:maus /src/package.json /app/package.json

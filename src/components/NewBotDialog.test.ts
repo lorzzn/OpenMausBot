@@ -2,7 +2,7 @@ import { Children, createElement, isValidElement, type EffectCallback, type Reac
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ effects: [] as EffectCallback[], dispatch: vi.fn(), api: vi.fn(), create: vi.fn(), ready: false, hook: 0, admin: false, pairedAdmin: false, pairedWebFullAccess: false }));
+const fixture = vi.hoisted(() => ({ effects: [] as EffectCallback[], dispatch: vi.fn(), api: vi.fn(), create: vi.fn(), setDraft: vi.fn(), ready: false, hook: 0, admin: false, pairedAdmin: false, pairedWebFullAccess: false }));
 vi.mock("@/lib/use-owner-or-admin", () => ({ useOwnerOrAdmin: () => fixture.admin }));
 vi.mock("@/lib/use-paired-admin", () => ({ usePairedAdmin: () => fixture.pairedAdmin }));
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({ capabilities: {} }) }));
@@ -15,6 +15,7 @@ vi.mock("react", async importOriginal => {
       const draft = state[0] as { bot: { name: string }; patch: (patch: { name: string }) => void };
       if (draft.bot.name !== "Fixture") draft.patch({ name: "Fixture" });
     }
+    if (index === 1) return [state[0], fixture.setDraft];
     return fixture.ready && index === 3 ? [true, state[1]] : state;
   } };
 });
@@ -47,7 +48,7 @@ function render(defaultsMode = false, onCreated?: () => void | Promise<void>) {
 }
 beforeEach(() => {
   fixture.effects = []; fixture.dispatch.mockReset(); fixture.api.mockReset();
-  fixture.ready = false; fixture.admin = false; fixture.pairedAdmin = false; fixture.pairedWebFullAccess = false; fixture.create.mockReset();
+  fixture.ready = false; fixture.admin = false; fixture.pairedAdmin = false; fixture.pairedWebFullAccess = false; fixture.create.mockReset(); fixture.setDraft.mockReset();
   fixture.api.mockReturnValue(new Promise(() => {}));
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -129,6 +130,27 @@ describe("bot draft dialog", () => {
     expect(fixture.dispatch).not.toHaveBeenCalled();
     const submit = result.nodes.find(node => node.type === "button" && node.props.disabled)!;
     expect(submit.props.disabled).toBe(true);
+  });
+
+  it.each([undefined, null, { instanceId: "", model: "" }])("fills an unselected saved default from the available model (%j)", async selection => {
+    const available = { instanceId: "openrouter", model: "fixture-model" };
+    fixture.api.mockResolvedValue({ defaults: { profile: { modelSelection: selection }, memory: {}, skills: [], routines: [] }, modelSelection: available, suggestedName: "Fixture" });
+    render();
+    fixture.effects[0]();
+    await vi.waitFor(() => expect(fixture.setDraft).toHaveBeenCalledOnce());
+    expect(fixture.setDraft.mock.calls[0]![0].bot.modelSelection).toEqual(available);
+  });
+
+  it.each([
+    { instanceId: "claude", model: "chosen-model" },
+    { instanceId: "claude", model: "" },
+    { instanceId: "", model: "chosen-model" },
+  ])("preserves an intentional saved model choice (%j)", async selection => {
+    fixture.api.mockResolvedValue({ defaults: { profile: { modelSelection: selection }, memory: {}, skills: [], routines: [] }, modelSelection: { instanceId: "openrouter", model: "fixture-model" }, suggestedName: "Fixture" });
+    render();
+    fixture.effects[0]();
+    await vi.waitFor(() => expect(fixture.setDraft).toHaveBeenCalledOnce());
+    expect(fixture.setDraft.mock.calls[0]![0].bot.modelSelection).toEqual(selection);
   });
 
   it("can cancel a loading draft without creating or deleting a bot", () => {

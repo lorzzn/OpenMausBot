@@ -11,7 +11,7 @@ const EXACT: Record<string, number> = {
   // routes, plus their admin audit match, and the /hooks/ prefix that serves
   // webhooks on the web port for single-port Docker deployments; all new
   // routes still use the table.
-  'path === "/': 165,
+  'path === "/': 160,
   "path.match(": 89,
   "path.startsWith(": 12,
   ".exec(path)": 19,

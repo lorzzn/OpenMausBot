@@ -25,6 +25,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { PROVIDER_CREDENTIAL_ENV, stripWorkspaceCredentialEnv } from "../config.ts";
+import { openStartupModelCatalog, writeStartupModelCache } from "../startup-model-catalog.ts";
 import { augmentedPath } from "../env-path.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
 import {
@@ -158,6 +159,7 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
     };
   }
   if (turn.integrations?.browser) servers.browser = { ...turn.integrations.browser };
+  if (turn.integrations?.data) servers.data = { ...turn.integrations.data };
   for (const [name, server] of Object.entries(turn.integrations?.custom ?? {})) servers[name] = { ...server, scope: "custom" };
   for (const [name, server] of Object.entries(servers)) {
     if (parsed.scope !== undefined && !canUseMcpServer(parsed.scope, name)) { delete servers[name]; continue; }
@@ -653,14 +655,21 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       } catch {
         if (base.options.length) models = base;
       }
+      try { writeStartupModelCache(instanceId, models); } catch { /* derived cache */ }
     };
     const refreshModels = async () => {
       await updatePiModelCatalog(config.cli, catalogEnv);
       await readModels();
     };
     // Startup stays local and fast. Only the explicit Refresh button crosses
-    // pi's model-catalog network boundary.
-    await readModels();
+    // pi's model-catalog network boundary. A later start serves the saved
+    // list and reads the local catalog behind listen.
+    const startupModelRefresh = (await openStartupModelCatalog({
+      instanceId,
+      use: (catalog) => { models = catalog; },
+      current: () => models,
+      refresh: readModels,
+    }))?.pending ?? null;
 
     const listeners = new Set<RuntimeEventListener>();
     // one active turn per thread
@@ -685,6 +694,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
     });
 
     const sendTurn = async (turn: SendTurnInput) => {
+      if (startupModelRefresh) await startupModelRefresh;
       const { threadId } = turn;
       const selection = parseToolScope(turn.toolScope);
       if (!selection.ok) throw new Error(selection.error);
@@ -1145,7 +1155,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         }
       }));
       child.on("error", (err) => {
-        const fail = describeSpawnFailure(err as NodeJS.ErrnoException, config.cli);
+        const fail = describeSpawnFailure(err as NodeJS.ErrnoException, config.cli, turn.cwd);
         rejectWaiters(new Error(fail.message));
         emit({ ...base(threadId, turnId), type: "runtime.error", message: fail.message, setup: fail.setup });
         settle(false);
@@ -1340,6 +1350,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         return models;
       },
       refreshModels,
+      ...(startupModelRefresh ? { startupModelRefresh } : {}),
       snapshot,
       adapter: {
         provider: DRIVER_KIND,
@@ -1354,6 +1365,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           phoneMcp: true,
           customMcp: true,
           browserMcp: true,
+          dataMcp: true,
           // Host control (the user's real Mac) rides the pi-native permission
           // card (`ctx.ui.confirm` → extension_ui_request) gated in the
           // extension, so it is offered exactly when the other engines offer

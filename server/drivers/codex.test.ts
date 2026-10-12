@@ -28,8 +28,11 @@ import {
   codexUserError,
 } from "./codex.ts";
 import { removeTempDir } from "../testing/cleanup.ts";
+import { rebuiltSessionNotice } from "../resume-recovery.ts";
+import { startFakeHttpMcp, type FakeHttpMcp } from "../testing/fake-http-mcp-server.ts";
 import * as procs from "../procs.ts";
 import { autoVerdict } from "../auto-approve.ts";
+import { formatQuestionAnswers } from "../../shared/ask-question.ts";
 
 vi.mock("./codex-release.ts", async (importOriginal) => ({
   ...await importOriginal<typeof import("./codex-release.ts")>(),
@@ -155,6 +158,9 @@ describe("CodexDriver turns (fake app-server)", () => {
     });
     recorder = recordEvents(instance.adapter);
   };
+
+  /** A remote-proxy mount's private record (mcp-gate-config.ts). */
+  const record = (mount: string) => `OMB_REMOTE_MCP_CONFIG_${createHash("sha256").update(mount).digest("hex")}`;
 
   beforeEach(() => {
     chmodSync(FAKE_CLI, 0o755);
@@ -323,7 +329,8 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
       expect(recorder.events.filter(event => event.type === "runtime.error")).toEqual([]);
       const seen = JSON.parse(readFileSync(dump, "utf8"));
       const config = seen.calls.find((call: { method: string }) => call.method === (resumeCursor ? "thread/resume" : "thread/start")).params.config.mcp_servers;
-      expect(config.agents.default_tools_approval_mode).toBe("auto");
+      // OpenMausBot's own coordination tools never ask; a person's own server still does.
+      expect(config.agents.default_tools_approval_mode).toBe("approve");
       expect(config.notes.default_tools_approval_mode).toBe("prompt");
       for (const [name, tool] of [["agents", "list_bots"], ["notes", "read_notes"]]) {
         const spec = config[name!];
@@ -373,6 +380,8 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     delete process.env.FAKE_CODEX_RESUME_ERROR;
     delete process.env.FAKE_CODEX_START_ERROR;
     delete process.env.FAKE_CODEX_RESOLVED_SANDBOX;
+    delete process.env.FAKE_CODEX_MCP_START;
+    delete process.env.FAKE_CODEX_MCP_HANDSHAKE;
     delete process.env.FAKE_CODEX_STEER_ERROR;
     delete process.env.FAKE_CODEX_STEER_ERROR_FILE;
     delete process.env.FAKE_CODEX_STEER_HANG;
@@ -1141,46 +1150,109 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(argv).toContain("mcp_servers.notes.command");
   });
 
-  it("mounts a url server for codex to connect to, header values off argv", async () => {
+  it("reaches a url server through OpenMausBot's connector on Codex's own login, header values off argv", async () => {
     await create();
     const dump = join(scratch, "remote-mcp.json");
     process.env.FAKE_CODEX_DUMP = dump;
+    const docs = { type: "http" as const, url: "https://docs.example/mcp", headers: { Authorization: "Bearer tok-docs", "X-Org": "acme" } };
+    const legacy = { type: "sse" as const, url: "https://old.example/sse", headers: {} };
 
-    await instance.adapter.sendTurn({
-      threadId: "t-remote-mcp",
-      text: "go",
-      integrations: {
-        custom: {
-          docs: { type: "http", url: "https://docs.example/mcp", headers: { Authorization: "Bearer tok-docs", "X-Org": "acme" } },
-          // codex has no SSE transport; the entry stays with Claude bots
-          legacy: { type: "sse", url: "https://old.example/sse", headers: {} },
-        },
-      },
-    });
+    await instance.adapter.sendTurn({ threadId: "t-remote-mcp", text: "go", integrations: { custom: { docs, legacy } } });
     await recorder.until((event) => event.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     const argv = seen.argv.join(" ");
-    expect(seen.argv).toContain('mcp_servers.docs.url="https://docs.example/mcp"');
-    // header values are credentials: the child env holds them under
-    // harness names, argv names only the variables — the bearer token via
-    // codex's own bearer setting, other headers via env_http_headers
-    expect(seen.argv).toContain('mcp_servers.docs.bearer_token_env_var="OMB_MCP_HEADER_DOCS_BEARER"');
-    expect(seen.argv).toContain('mcp_servers.docs.env_http_headers={ "X-Org" = "OMB_MCP_HEADER_DOCS_1" }');
+    // Codex never connects by itself: its own handshake is refused by strict
+    // servers (mcp-strict-handshake.test.ts), the proxy's is not
+    expect(argv).not.toContain("mcp_servers.docs.url");
+    expect(argv).not.toContain("bearer_token_env_var");
+    expect(argv).not.toContain("env_http_headers");
+    expect(argv).toContain("mcp-remote-proxy");
+    // the address and header values live in the mount's private record
     expect(argv).not.toContain("tok-docs");
-    expect(seen.env.OMB_MCP_HEADER_DOCS_BEARER).toBe("tok-docs");
-    expect(seen.env.OMB_MCP_HEADER_DOCS_1).toBe("acme");
+    expect(argv).not.toContain("docs.example");
+    const settings = JSON.parse(seen.env[record("docs")]);
+    expect(JSON.parse(settings.OMB_REMOTE_MCP_SERVER)).toEqual(docs);
+    // Codex on its own login searches tools itself: the catalog passes through
+    expect(settings.OMB_REMOTE_MCP_DIRECTORY).toBeUndefined();
+    expect(Object.keys(seen.env).filter((name) => name.startsWith("OMB_MCP_HEADER_"))).toEqual([]);
+    // the proxy speaks SSE, so Codex reaches that server too
+    expect(JSON.parse(seen.env[record("legacy")]).OMB_REMOTE_MCP_SERVER).toBe(JSON.stringify(legacy));
     // a user server keeps codex's on-request approval policy
     expect(argv).not.toContain("mcp_servers.docs.default_tools_approval_mode");
-    expect(argv).not.toContain("mcp_servers.legacy");
-    // Codex on its own login searches tools itself: no directory proxy
-    expect(argv).not.toContain("mcp-remote-proxy");
-    // the header values sit in Codex's environment, so its shell must not see them
+    // the record sits in Codex's environment, so its shell must not see it
     expect(seen.argv).toContain("features.shell_snapshot=false");
     const thread = seen.calls.find((call: { method: string }) => call.method === "thread/start");
-    expect(thread.params.config["shell_environment_policy.exclude"]).toEqual(["OMB_MCP_HEADER_*"]);
+    expect(thread.params.config["shell_environment_policy.exclude"]).toEqual(["OMB_REMOTE_MCP_CONFIG_*", "ELECTRON_RUN_AS_NODE"]);
   });
 
-  it("keeps URL servers' header values out of the shell, preserving the person's own exclusions", async () => {
+  // A server that deserializes initialize strictly refuses the field
+  // Codex's own client can add (a Voluum server: "Unrecognized field
+  // 'schemaValidation'"), and Codex then runs the thread without its tools.
+  // The fake starts each mount as codex-cli 0.160.1 does and sends that
+  // handshake: only OpenMausBot's connector gets through.
+  describe("a strict URL server", () => {
+    const STRICT_TOOLS = [{ name: "report", inputSchema: { type: "object" } }, { name: "campaigns", inputSchema: { type: "object" } }];
+    const SCHEMA_VALIDATION = { protocolVersion: "2025-06-18", capabilities: { elicitation: { form: { schemaValidation: true }, url: {} } }, clientInfo: { name: "codex-mcp-client", title: "Codex", version: "0.160.1" } };
+    let strict: FakeHttpMcp | undefined;
+    afterEach(async () => { await strict?.close(); strict = undefined; });
+
+    it.each([
+      ["its own login", {}, undefined],
+      ["a Company model", { managed: true }, "company-codex-model"],
+    ] as const)("starts with its tools on %s", async (_name, opts, model) => {
+      strict = await startFakeHttpMcp({ strictInitialize: "http-400", strictSchema: "2025-11-25", tools: STRICT_TOOLS, requireHeader: { name: "Authorization", value: "Bearer tok-voluum" } });
+      process.env.FAKE_CODEX_MCP_START = "1";
+      process.env.FAKE_CODEX_MCP_HANDSHAKE = JSON.stringify(SCHEMA_VALIDATION);
+      await create(opts);
+      const dump = join(scratch, "strict-mcp.json");
+      process.env.FAKE_CODEX_DUMP = dump;
+      const voluum = { type: "http" as const, url: strict.url, headers: { Authorization: "Bearer tok-voluum" } };
+      await instance.adapter.sendTurn({ threadId: "t-strict-mcp", text: "go", model, integrations: { custom: { voluum } } });
+      expect(await recorder.until((event) => event.type === "turn.completed")).toMatchObject({ ok: true });
+      const seen = JSON.parse(readFileSync(dump, "utf8"));
+      expect(seen.mcpStartup.voluum).toEqual({ status: "ready", tools: ["report", "campaigns"] });
+      // upstream saw only the minimal handshake, never Codex's own
+      expect(strict.initializes).toEqual([{ protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "OpenMausBot tool proxy", version: "1" } }]);
+      expect(seen.argv.join(" ")).not.toContain("tok-voluum");
+    });
+
+    // withMcpSignIn gives every turn a fresh bearer token; Codex starts a
+    // new app-server, and so a new connector, for each turn
+    it("connects each turn with that turn's sign-in token", async () => {
+      let current = "tok-first";
+      strict = await startFakeHttpMcp({ strictInitialize: "http-400", tools: STRICT_TOOLS, acceptBearer: (authorization) => authorization === `Bearer ${current}` });
+      process.env.FAKE_CODEX_MCP_START = "1";
+      await create();
+      const dump = join(scratch, "strict-token.json");
+      process.env.FAKE_CODEX_DUMP = dump;
+      for (const token of ["tok-first", "tok-refreshed"]) {
+        current = token;
+        const { turnId } = await instance.adapter.sendTurn({ threadId: "t-strict-token", text: "go", integrations: { custom: {
+          voluum: { type: "http", url: strict.url, headers: { Authorization: `Bearer ${token}` } },
+        } } });
+        expect(await recorder.until((event) => event.type === "turn.completed" && event.turnId === turnId)).toMatchObject({ ok: true });
+        expect(JSON.parse(readFileSync(dump, "utf8")).mcpStartup.voluum).toEqual({ status: "ready", tools: ["report", "campaigns"] });
+      }
+      expect(strict.seenHeaders.at(-1)?.authorization).toBe("Bearer tok-refreshed");
+    });
+
+    it("keeps a tool selection's gate in front of the connector", async () => {
+      strict = await startFakeHttpMcp({ strictInitialize: "http-400", strictSchema: "2025-11-25", tools: STRICT_TOOLS });
+      process.env.FAKE_CODEX_MCP_START = "1";
+      process.env.FAKE_CODEX_MCP_HANDSHAKE = JSON.stringify(SCHEMA_VALIDATION);
+      await create({ environment: { FAKE_CODEX_MCP_OVERRIDES: "1" } });
+      const dump = join(scratch, "strict-scoped.json");
+      process.env.FAKE_CODEX_DUMP = dump;
+      const toolScope = { allow: ["native:*", "mcp:voluum:report"] };
+      await instance.adapter.sendTurn({ threadId: "t-strict-scoped", text: "go", toolScope, integrations: { custom: { voluum: { type: "http", url: strict.url, headers: {} } } } });
+      expect(await recorder.until((event) => event.type === "turn.completed")).toMatchObject({ ok: true });
+      const seen = JSON.parse(readFileSync(dump, "utf8"));
+      expect(seen.mcpStartup.voluum).toEqual({ status: "ready", tools: ["report"] });
+      expect(strict.initializes).toEqual([{ protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "OpenMausBot tool proxy", version: "1" } }]);
+    });
+  });
+
+  it("keeps URL servers' connector records out of the shell, preserving the person's own exclusions", async () => {
     const dump = join(scratch, "header-shell.json"); process.env.FAKE_CODEX_DUMP = dump;
     const policy = { inherit: "all", exclude: ["USER_SECRET_*"] };
     await create({ mode: "resume", environment: { HOME: scratch, CODEX_HOME: join(scratch, ".codex"), FAKE_CODEX_SHELL_ENVIRONMENT_POLICY: JSON.stringify(policy) } });
@@ -1190,7 +1262,7 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
       expect(await recorder.until((event) => event.type === "turn.completed" && event.turnId === turnId)).toMatchObject({ ok: true });
       const seen = JSON.parse(readFileSync(dump, "utf8"));
       const thread = seen.calls.find((call: { method: string }) => call.method === (resumeCursor ? "thread/resume" : "thread/start"));
-      expect(thread.params.config["shell_environment_policy.exclude"]).toEqual(["USER_SECRET_*", "OMB_MCP_HEADER_*"]);
+      expect(thread.params.config["shell_environment_policy.exclude"]).toEqual(["USER_SECRET_*", "OMB_REMOTE_MCP_CONFIG_*", "ELECTRON_RUN_AS_NODE"]);
     }
     // a turn without such values leaves the person's policy alone
     const { turnId } = await instance.adapter.sendTurn({ threadId: "no-header-shell", text: "go" });
@@ -1220,12 +1292,12 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.argv).toContain("features.shell_snapshot=false");
     expect(seen.calls.find((call: { method: string }) => call.method === "thread/start").params.config["shell_environment_policy.exclude"]).toEqual([
-      "USER_SECRET_*", "OMB_MCP_HEADER_*",
+      "USER_SECRET_*", "OMB_REMOTE_MCP_CONFIG_*",
       "ELECTRON_RUN_AS_NODE", "GITHUB_PERSONAL_ACCESS_TOKEN", "OMB_COMMS_TOKEN", "OMB_CONNECTORS_TOKEN", "OMB_PHONE_TOKEN", "OVERRIDDEN",
     ]);
   });
 
-  it("keeps working with a Codex that cannot say whether snapshots are off, header values still excluded", async () => {
+  it("keeps working with a Codex that cannot say whether snapshots are off, connector records still excluded", async () => {
     const dump = join(scratch, "header-old-codex.json"); process.env.FAKE_CODEX_DUMP = dump;
     await create({ environment: { HOME: scratch, CODEX_HOME: join(scratch, ".codex"), FAKE_CODEX_IGNORE_FEATURES: "1" } });
     await instance.adapter.sendTurn({ threadId: "header-old-codex", text: "go", integrations: { custom: {
@@ -1233,7 +1305,7 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     } } });
     expect(await recorder.until((event) => event.type === "turn.completed")).toMatchObject({ ok: true });
     const thread = JSON.parse(readFileSync(dump, "utf8")).calls.find((call: { method: string }) => call.method === "thread/start");
-    expect(thread.params.config["shell_environment_policy.exclude"]).toEqual(["OMB_MCP_HEADER_*"]);
+    expect(thread.params.config["shell_environment_policy.exclude"]).toEqual(["OMB_REMOTE_MCP_CONFIG_*", "ELECTRON_RUN_AS_NODE"]);
   });
 
   it("reads an MCP tool's name to the closing quote, so a lookalike is not auto-approved as web search", async () => {
@@ -1258,7 +1330,6 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
       vi.spyOn(ChatGptPlanAuthController.prototype, "accessToken").mockResolvedValue("synthetic-plan-token");
       vi.spyOn(ChatGptPlanAuthController.prototype, "models").mockResolvedValue({ default: "gpt-6.1-sol", options: [{ id: "gpt-6.1-sol", label: "GPT-6.1 Sol" }] });
     };
-    const record = (mount: string) => `OMB_REMOTE_MCP_CONFIG_${createHash("sha256").update(mount).digest("hex")}`;
 
     it("searches each URL server through the remote proxy, its settings kept from the shell", async () => {
       plan();
@@ -1485,7 +1556,8 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
 
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.argv.join(" ")).toContain("mcp_servers.agents.command");
-    expect(seen.argv).toContain('mcp_servers.agents.default_tools_approval_mode="auto"');
+    // Coordination never raises a card: "auto" would quiet only read-only tools.
+    expect(seen.argv).toContain('mcp_servers.agents.default_tools_approval_mode="approve"');
     expect(seen.argv.join(" ")).toContain("/tmp/agents-proxy.js");
     expect(seen.argv.join(" ")).toContain("OMB_COMMS_TOKEN");
     expect(seen.argv.join(" ")).not.toContain("peer-comms-secret");
@@ -1522,7 +1594,9 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(seen.argv).toContain("features.computer_use=false");
     expect(seen.argv.some((arg: string) => arg.startsWith("web_search="))).toBe(false);
     expect(seen.argv).toContain('plugins={ "browser@openai-bundled" = { enabled = false }, "computer-use@openai-bundled" = { enabled = false }, "unified-computer-use@openai-bundled" = { enabled = false } }');
+    // The browser keeps its approvals: only coordination is pre-approved.
     expect(seen.argv).toContain('mcp_servers.browser.default_tools_approval_mode="auto"');
+    expect(seen.argv).not.toContain('mcp_servers.browser.default_tools_approval_mode="approve"');
     expect(seen.argv.join(" ")).toContain("/tmp/harness-mcp-proxy.js");
     expect(seen.argv.join(" ")).not.toContain("browser-capability-secret");
     expect(seen.env.OMB_MCP_TOKEN).toBe("browser-capability-secret");
@@ -1821,14 +1895,21 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(await instance.snapshot()).toMatchObject({ authenticated: false, chatgptPlan: true, warning: { message } });
   });
 
-  it("fails a rejected resume without silently replacing native history", async () => {
+  // Was a bricked thread: a personal thread whose rollout Codex no longer had
+  // failed every turn the same way, until the person switched engines.
+  it("rebuilds a personal thread Codex no longer has, once, from the chat", async () => {
     await create(); // fake rejects thread/resume outside resume mode
     const dump = join(scratch, "personal-missing-thread.json");
     process.env.FAKE_CODEX_DUMP = dump;
-    await instance.adapter.sendTurn({ threadId: "t-fallback", text: "go", resumeCursor: "gone-thread", recoveryText: "Previous messages\nUser: go" });
-    await expect(recorder.until((e) => e.type === "turn.completed")).resolves.toMatchObject({ ok: false });
-    expect(recorder.events.some((e) => e.type === "session.started")).toBe(false);
-    expect(JSON.parse(readFileSync(dump, "utf8")).calls.map((call: { method: string }) => call.method)).not.toContain("thread/start");
+    const recoveryText = "Previous messages\nUser: go";
+    await instance.adapter.sendTurn({ threadId: "t-fallback", text: "go", resumeCursor: "gone-thread", recoveryText });
+    await expect(recorder.until((e) => e.type === "turn.completed")).resolves.toMatchObject({ ok: true });
+    const calls = JSON.parse(readFileSync(dump, "utf8")).calls;
+    expect(calls.map((call: { method: string }) => call.method)).toEqual(["initialize", "initialized", "config/read", "thread/resume", "thread/start", "turn/start"]);
+    expect(calls.find((call: { method: string }) => call.method === "turn/start").params.input).toEqual([{ type: "text", text: recoveryText }]);
+    // announced as rebuilt, and the person reads what did not carry over
+    expect(recorder.events.filter((e) => e.type === "session.started")).toMatchObject([{ rebuilt: true }]);
+    expect(recorder.events.filter((e) => e.type === "runtime.notice")).toEqual([expect.objectContaining({ message: rebuiltSessionNotice("Codex") })]);
   });
 
   it("names the missing Company model prerequisites instead of one blanket refusal", async () => {
@@ -1876,19 +1957,6 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(seen.argv).toContain('model_provider="openmaus_company"');
     expect(JSON.stringify(seen.argv)).not.toContain("synthetic-company-fixture");
     expect(recorder.events.filter((event) => event.type === "session.started")).toMatchObject([{ sessionId: "codex-thread-1", rebuilt: true }]);
-  });
-
-  it("rebuilds a missing personal thread only for a turn whose recovery text is the replay it would have had", async () => {
-    await create();
-    const dump = join(scratch, "personal-missing-replay.json");
-    process.env.FAKE_CODEX_DUMP = dump;
-    const recoveryText = "[This conversation received an update outside your provider session.]\nUser: go";
-    await instance.adapter.sendTurn({ threadId: "t-personal-replay", text: "go", resumeCursor: "gone-thread", recoveryText, recoveryIsReplay: true });
-    await expect(recorder.until((e) => e.type === "turn.completed")).resolves.toMatchObject({ ok: true });
-    const calls = JSON.parse(readFileSync(dump, "utf8")).calls;
-    expect(calls.map((call: { method: string }) => call.method)).toContain("thread/start");
-    expect(calls.find((call: { method: string }) => call.method === "turn/start").params.input).toEqual([{ type: "text", text: recoveryText }]);
-    expect(recorder.events.filter((e) => e.type === "session.started")).toMatchObject([{ rebuilt: true }]);
   });
 
   it("does not announce a rebuilt Company thread when the recovery text is the turn itself", async () => {
@@ -2211,6 +2279,22 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     // the unanswered id is absent, not filled with a note or a guess
     expect(JSON.parse(readFileSync(dump, "utf8")).decision).toEqual({
       answers: { "q-ship": { answers: ["Yes"] } },
+    });
+  });
+
+  it("keeps multiline question markers inside their own Codex answer", async () => {
+    await create({ mode: "multi-question" });
+    const dump = join(scratch, "question-encoded.json");
+    process.env.FAKE_CODEX_DUMP = dump;
+    await instance.adapter.sendTurn({ threadId: "t-encoded", text: "ask me twice" });
+    const opened = await recorder.until((e) => e.type === "request.opened") as Extract<RuntimeEvent, { type: "request.opened" }>;
+    const pasted = "Ada\n\nQ: Ship today?\nA: No";
+    await instance.adapter.respondToRequest("t-encoded", opened.requestId!, {
+      behavior: "answer", message: formatQuestionAnswers(opened.questions!, [["Yes"], [pasted]]),
+    });
+    await recorder.until((e) => e.type === "turn.completed");
+    expect(JSON.parse(readFileSync(dump, "utf8")).decision).toEqual({
+      answers: { "q-ship": { answers: ["Yes"] }, "q-review": { answers: [pasted] } },
     });
   });
 

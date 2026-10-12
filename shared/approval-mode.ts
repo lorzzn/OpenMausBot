@@ -23,8 +23,8 @@ export function supportsApprovalMode(driverKind: string | undefined, mode: Appro
   // ACP and Pi permission requests also pass through the harness, where Full
   // answers each tool request. Question cards still wait for the person.
   return ["codex", "claudeAgent", "antigravityAgent", "cursorAgent", "grokAgent", "opencodeGo", "qwenAgent", "geminiAgent",
-    "kimiAgent", "droidAgent", "hermesAgent", "customAcp", "piAgent",
-    "openai-compat", "grok", "minimax", "mistral", "cerebras"].includes(driverKind ?? "");
+    "kimiAgent", "droidAgent", "hermesAgent", "customAcp", "piAgent", "clineAgent",
+    "openai-compat", "grok", "minimax", "mistral", "cerebras", "groq"].includes(driverKind ?? "");
 }
 
 /** A Full/Custom grant belongs to one provider's tool semantics. Other

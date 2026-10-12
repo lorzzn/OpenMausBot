@@ -30,7 +30,7 @@ describe("paired web Full access on an isolated server", () => {
   const bot = async () => (await call("GET", "/api/bots?messages=0")).body.bots.find((candidate: any) => candidate.id === botId);
 
   beforeAll(async () => {
-    fixture = await launchVerificationServer({}, undefined, undefined, undefined, undefined, undefined, [], undefined, true);
+    fixture = await launchVerificationServer({}, undefined, undefined, undefined, undefined, undefined, [], undefined, undefined, true);
     const pair = async (scopes: string[]) => {
       const invitation = await call("POST", "/api/auth/pairing", { scopes });
       expect(invitation.status).toBe(200);
