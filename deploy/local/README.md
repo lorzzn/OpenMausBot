@@ -1,5 +1,8 @@
 # Local Docker Compose
 
+The fork's current installations, upstream merge procedure and operational
+constraints are recorded in [the maintenance and deployment handoff](../../docs/fork-maintenance.md).
+
 From the repository root, run `docker compose up -d --build`, then open
 http://localhost:8080. Docker with Linux containers is required.
 Compose supplies defaults; no `.env` file is required.
