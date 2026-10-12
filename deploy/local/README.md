@@ -96,6 +96,19 @@ the external scheme and host in forwarded headers.
 Keep the default `OMB_BIND_ADDRESS=127.0.0.1` when using a local HTTPS proxy.
 Private tailnet webhook URLs are only reachable by callers on that tailnet.
 
+## Live calls on a standalone server
+
+Set `OMB_PRO_PLAN=1` in `.env` to enable the upstream Live-call entitlement
+for a standalone Docker server, then recreate the application container.
+Compose passes the setting to the application in every deployment mode;
+the default is `0`. With it disabled, starting a Live call returns HTTP 402
+with `needsPro`. This does not affect text chat.
+
+Live calls also require an OpenAI API key configured in the application and
+a browser microphone over HTTPS or localhost. See
+[`docs/verification/live-calls.md`](../../docs/verification/live-calls.md)
+for the upstream contract and isolated checks.
+
 ## HTTPS on local IP addresses (no domain)
 
 The renderer supplies a UUID fallback using secure random bytes on HTTP

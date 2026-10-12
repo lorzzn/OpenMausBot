@@ -313,6 +313,22 @@ describe("Store", () => {
     for (const field of Object.keys(patch)) expect(wire).not.toHaveProperty(field);
   });
 
+  it("keeps a Live call row's record across a restart and scrubs a secret from its title", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const key = "sk-ant-" + "c".repeat(90);
+    const row = store.appendMessage(bot.threadId, {
+      role: "bot",
+      kind: "call",
+      text: "Call with Ada · 1:42",
+      call: { callId: "call-1", botId: bot.id, client: "ios", startedAt: 1_000, endedAt: 103_000, seconds: 102, endReason: "hung-up", title: `Deploy with ${key}` },
+    });
+    expect(row.call?.title).not.toContain(key);
+    const reloaded = new Store(selection).messagesFor(bot.threadId).find((message) => message.id === row.id);
+    expect(reloaded?.call).toMatchObject({ callId: "call-1", botId: bot.id, client: "ios", seconds: 102, endReason: "hung-up" });
+    expect(JSON.stringify(reloaded)).not.toContain(key);
+  });
+
   it("round-trips audio attachments with their metadata through persistence", () => {
     const store = new Store(selection);
     const bot = store.createBot({}, { seedMessages: false });
@@ -508,16 +524,16 @@ describe("Store", () => {
     expect(sibling.modelSelection).toBeUndefined();
     store.switchTaskModel(bot.id, first.threadId, next, true, true);
     expect(bot).toMatchObject({ modelSelection: next, approvalMode: "ask", alwaysAllow: [] });
-    // The thread it was changed from now follows the bot; a sibling that
-    // follows moves to the new engine and, its Full access belonging to the
-    // old one, back to Ask; a thread's own model and level stay.
+    // The selected thread follows the deliberately lowered bot. Other
+    // followers move to the supported engine with their previous Full
+    // access; a thread's own model and level stay.
     expect(first.modelSelection).toBeUndefined();
-    expect(sibling).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
+    expect(sibling).toMatchObject({ approvalMode: "full", autoApprove: undefined, alwaysAllow: ["old-tool"] });
     expect(store.projectBotForTask(bot.id, sibling.threadId)?.modelSelection).toEqual(next);
     expect(picked).toMatchObject({ modelSelection: opus, approvalMode: "full", alwaysAllow: ["old-tool"] });
     const reloaded = new Store(selection);
     expect(reloaded.bot(bot.id)).toMatchObject({ modelSelection: next, approvalMode: "ask" });
-    expect(reloaded.taskByThread(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "ask" });
+    expect(reloaded.taskByThread(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "full" });
     expect(reloaded.taskByThread(bot.id, picked.threadId)).toMatchObject({ modelSelection: opus, approvalMode: "full" });
   });
 
