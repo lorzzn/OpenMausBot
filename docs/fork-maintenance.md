@@ -19,7 +19,9 @@
 | 本次源码版本 | `0.1.107`，包含该正式版本发布后的 main 更新 |
 
 本次同步把上游合并到定制分支，保留两边历史。源码合并、Git 提交、推送和运行服务更新是四个不同的动作。
-**本次同步不代表两台机器已运行新版本。** 本次核对时，本机和 50 的应用容器仍是 **0.1.101**。
+源码同步完成后，已按用户要求把本机和 50 都部署到 **0.1.107**，实际发布记录见第 11 节。
+运行制品来自 `22f85d1acff2645ea59292debcb0ef33696de599`；随后维护文档的提交不改变运行代码。
+本次同步与交接提交尚未推送到 `origin`，50 的源码通过 Git bundle 同步。
 
 上游在本次范围内新增了持久化任务运行机制，并已把 `coordinate_bots` 接入，替换旧的 `room-handoffs` 树。
 新机制的权限继承、任务状态、取消、等待用户输入、重启恢复和旧记录迁移都属于合并时必须检查的路径。
@@ -67,8 +69,8 @@ CLI 和身份信息保存在容器的持久 HOME `/data`，更新镜像不应把
 | --- | --- | --- |
 | 主机 | 当前开发电脑 | `108.186.129.50` |
 | 源码目录 | `/home/zhipeng/codes/OpenMausBot` | `/opt/OpenMausBot` |
-| 核对时源码 HEAD | 同步前 `e9fe8f8cd`，本次提交后会推进 | `e9fe8f8cd`，尚未纳入本次同步 |
-| 核对时应用版本 | `0.1.101` | `0.1.101` |
+| 运行制品的源码 HEAD | `22f85d1ac`，包含本次源码合并 | `22f85d1ac`，同一份编译制品 |
+| 核对时应用版本 | `0.1.107` | `0.1.107` |
 | 对外地址 | `https://omb.oomdev.de5.net/` | `https://ombus.oomdev.de5.net/` |
 | Docker 主机端口 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
 | 公网入口 | Cloudflare Tunnel | 宿主机 systemd Caddy |
@@ -127,11 +129,18 @@ Caddy 申请并续期公网证书。原有全局配置关闭自动 HTTP 跳转�
 DNS 是 `ombus.oomdev.de5.net → 108.186.129.50` 的 A 记录，现有部署使用直连、Cloudflare DNS 代理关闭。
 修改应用镜像不需要重新创建 DNS、Tunnel 或申请域名 API Token。
 
-### 50 的 `/mnt` 与包装命令差异
+### 50 的 `/mnt` 与包装命令
 
 2026-10-12 核对发现：运行中容器的 Compose 标签包含 **`compose.mnt.yaml`**，但 `/usr/local/bin/omb-compose` 包装命令只列出了基础与 VM 两个文件。
-所以 **下一次部署 50 应显式包含 `compose.mnt.yaml`**，保留已经启用的 `/mnt` 挂载。
-维护包装命令时使它与运行栈一致；不要因执行旧包装命令而无意移除挂载。本次源码同步只记录这个差异，没有更改 50 的包装命令或运行栈。
+此次部署已修正包装命令，明确列出基础、VM 和 `/mnt` 三个文件，并核对更新前后的挂载完全一致。
+维护包装命令时使它与运行栈一致；不要因执行旧包装命令而无意移除挂载。当前包装命令为：
+
+```sh
+#!/bin/sh
+set -eu
+cd /opt/OpenMausBot
+exec docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml "$@"
+```
 
 ## 4. Compose 文件的分工
 
@@ -415,8 +424,65 @@ curl --fail https://ombus.oomdev.de5.net/api/health
 
 完整 `deploy/local/Dockerfile.vm` 多阶段构建曾在 npm 下载阶段出现持续低速及 `ECONNRESET`，本次停止了该下载构建。
 因此完整 Dockerfile 从头到尾的构建不列为通过；已通过的是源码构建、官方原生资源准备脚本以及这些制品组成的隔离运行时镜像。
-下次实际部署前仍要完成目标机器上的正式镜像构建或经过核对的制品发布，不能把这个临时验证镜像当成服务已升级。
+源码同步阶段没有发布该临时验证镜像。随后按用户的部署请求完成了经过核对的制品发布，具体方法和实际运行状态见第 11 节。
 
 原始日志存放在本机被 Git 忽略的 `.omb-scratch/upstream-sync-20261012/`，包括 `targeted.log`、`workflows.log`、`acp-probes.log`、`stream-ui.log`、`packaged.log` 与 `native-check.json`。
 隔离 foreground fixture、流式测试拥有的服务器／浏览器和临时运行容器已经清理。SSH 临时凭据已经删除。
-**本次没有重部署本机或 50，两端仍运行 0.1.101；50 的 `/mnt` 包装命令差异仍需在下次部署时处理。**
+上述源码同步检查结束时，两端仍运行 0.1.101；后续部署及包装命令修正已完成，见下节。
+
+## 11. 两端部署完成记录（2026-10-12）
+
+用户随后要求部署，此次把本机与 50 都更新到了 **0.1.107**。没有改变入口方式，没有启用 Caddy 容器。
+
+| 项目 | 本机 | 50 |
+| --- | --- | --- |
+| 镜像内源码提交 | `22f85d1acff2645ea59292debcb0ef33696de599` | 同左 |
+| 实际应用镜像 ID | `sha256:77341dc7122b39ea3214fff30b11595a1f808bc57d36132d71d0b8f760802ffb` | `sha256:adff5a9e7264a534ffdb63c7477302bf5653e10edaa0e2b14e1395d5f14075e4` |
+| 运行标签 | `openmausbot-vm:local` | `openmausbot-vm:local` |
+| 发布标签 | `openmausbot-vm:0.1.107-22f85d1ac` | 同左，指向各自当前镜像 |
+| Compose | 基础 + VM + Tunnel | 基础 + VM + `/mnt` |
+| HTTP 映射 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799`，使用默认值 |
+| 公网入口 | `https://omb.oomdev.de5.net/` | `https://ombus.oomdev.de5.net/` |
+| 健康与重启次数 | healthy，`RestartCount=0` | healthy，`RestartCount=0` |
+| VM daemon | 29.8.1，应用能够连接专用 socket | 同左 |
+
+### 发布方法与制品核对
+
+为避开多阶段构建重复下载依赖的网络问题，本次使用**已安装的锁定依赖在本机编译，再在两台机器分别组装运行时镜像**。
+这仍使用现有 Compose 和同一个应用运行标签，只改变镜像的生成过程。
+
+1. 工作区干净，固定源码 SHA `22f85d1ac`，重新运行 `pnpm build:server`、`pnpm exec vite build`、`pnpm build:duckdb`，三项均通过。
+2. 两端基础镜像都是 `openmausbot-local:latest`，完整 ID 为 `sha256:6474542e76e44ef73280a82dbd61600e5c243905beeb60c896710d3890a790c2`；平台都是 Linux amd64。
+3. 发布目录仅包含 `dist-server/`、`dist/`、`dist-native/duckdb/linux-x64/`（在制品中命名为 `duckdb/`）及 `package.json`，另外添加发布清单和校验文件。没有复制 `.env`、用户数据、引擎登录或 Tunnel Token。
+4. 运行时镜像从该基础镜像构建，设置 `OMB_DUCKDB_DIR=/app/duckdb`，把上述文件复制到 `/app`，使用 `maus:maus` 所有者，入口仍是 `node dist-server/server-launcher.js`。
+5. `/app/deployment-manifest.json` 记录完整源码 SHA、上游 SHA、基础镜像 ID、构建时间、平台和每个制品文件的 SHA-256。镜像的 `org.opencontainers.image.revision`／`version` 与该清单一致。
+6. 1106 个应用制品文件在两端最终镜像内全部校验通过；同一份清单的聚合校验值为 `da7c13b059e1571807f34c3e8a73f746cedca75bb5f20ed068ae4936a61fbea7`。实际镜像 ID 因分别构建而不同，文件内容相同。
+7. 两端均用不挂载用户数据、`--network none` 的一次性容器执行真实 DuckDB 内存 SQL 查询和 resvg PNG 渲染；另在本机使用临时 HOME／数据目录启动最终镜像，验证健康接口和完整网页，随后清理隔离容器。
+
+以后使用制品发布时，继续按上述顺序核对完整文件树与原生依赖。可以读取运行中的版本／提交作对照：
+
+```sh
+docker exec openmausbot-omb-1 node -p "require('/app/package.json').version"
+docker exec openmausbot-omb-1 node -p "require('/app/deployment-manifest.json').sourceRevision"
+docker inspect openmausbot-omb-1 --format '{{.Image}} {{.State.Health.Status}} {{.RestartCount}}'
+```
+
+### 切换、清理与验证范围
+
+50 的源码用包含完整新增历史的 Git bundle 快进到同一分支，未依赖尚未推送的 GitHub 提交；维护文档的随后提交也同步到 50。
+两端都使用现有完整 Compose 组合执行 `up -d --no-build --pull never --remove-orphans --timeout 60 --wait --wait-timeout 180`，通过 Docker 的正常停止流程更新。
+共享应用网络的 `dind`／`cloudflared` 一起重新创建，核对其网络命名空间已指向新应用容器，避免还连着旧容器。
+
+更新前后的持久卷、端口、UID/GID 与挂载保持一致。50 的 `/mnt` 保留 `rslave`，包装命令已包含该 overlay。
+宿主机 Caddy 仍是 active／enabled，完整配置文件哈希未变，因此既有 OMB 与 Orca 路由都保持原样。
+
+本机与 50 的 loopback 和公网 `/api/health` 均返回成功；四个入口返回的网页与本次构建的 `dist/index.html` 校验值相同。
+未登录的公网健康接口只返回应用名称，这是服务器的正常访问控制，不应要求它提供 loopback 才有的 PID 和能力字段。
+本机检查时使用 `curl`；当前开发环境的 Python urllib 公网请求会出现 403，不能把这种客户端差异当成服务升级失败。
+
+50 已删除被替换的旧应用镜像，并清理此次上传的 Git bundle、构建归档、校验脚本和临时构建目录；没有制作数据备份。
+本机保留旧镜像标签 `openmausbot-vm:before-upstream-0.1.107-20261012`，仅供本机恢复时使用。
+没有发送邮箱验证码、生成配对码或调用真实付费引擎。此次确认的是部署、构建制品、健康、网页版本、VM daemon 和持久挂载，未重新验证实际账号的登录流程。
+
+本机证据在 `.omb-scratch/deploy-20261012/`，其中 `local-receipt.json` 与 `50-receipt.json` 记录端口、镜像、来源和挂载检查结果。
+50 另保留不含凭据和用户内容的 `.omb-scratch/deployment-receipt.json` 运维记录。上述运维记录不是数据备份。
