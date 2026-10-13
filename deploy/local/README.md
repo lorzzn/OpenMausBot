@@ -96,6 +96,25 @@ the external scheme and host in forwarded headers.
 Keep the default `OMB_BIND_ADDRESS=127.0.0.1` when using a local HTTPS proxy.
 Private tailnet webhook URLs are only reachable by callers on that tailnet.
 
+## Mounted cloud drives
+
+When the host mounts cloud drives under `/mnt`, include `compose.mnt.yaml`
+in every command that creates or updates the application container. It exposes
+the host's `/mnt` read-write to the application with `rslave` propagation, so
+later rclone mount changes also reach the container. Local VM desktops do not
+inherit this mount.
+
+For Tunnel + Local VM + host cloud drives, use:
+
+```sh
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml up -d --remove-orphans
+```
+
+Omitting this overlay on a later update removes the container's access to the
+host drives even while the host's rclone services remain healthy. The current
+local and VPS commands are recorded in
+[`docs/fork-maintenance.md`](../../docs/fork-maintenance.md).
+
 ## Live calls on a standalone server
 
 Set `OMB_PRO_PLAN=1` in `.env` to enable the upstream Live-call entitlement

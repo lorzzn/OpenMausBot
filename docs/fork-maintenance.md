@@ -1,7 +1,7 @@
 # 定制分支维护、上游同步与部署交接
 
 这份文档供维护本项目的人和后续编码代理使用。它记录本仓库的定制、两套现有部署、同步步骤与验证方法。
-涉及运行状态的记录截至 **2026-10-12（北京时间）**；操作前应重新读取容器标签、端口和 Git 状态，不能把这份快照当成实时状态。
+涉及运行状态的记录截至 **2026-10-13（北京时间）**；操作前应重新读取容器标签、端口和 Git 状态，不能把这份快照当成实时状态。
 
 ## 1. 仓库与本次同步基线
 
@@ -11,21 +11,22 @@
 | 定制分支 | `feature/zpmodified` |
 | 自有远端 `origin` | `git@github.com:lorzzn/OpenMausBot.git` |
 | 官方远端 `upstream` | `https://github.com/milind-soni/OpenMausBot.git` |
-| 合并前的定制分支提交 | `e9fe8f8cd` |
-| 上次合并提交 | `7b4834d22`，2026-10-08，v0.1.101 |
-| 上次纳入的上游提交 | `ff2b02e5eba604d225d46fef1ccf31450f176c7b` |
-| 本次纳入的上游提交 | `1b5877a6f19a6c9229d12c2a3cb1f3efb1b01bd2` |
-| 本次源码合并提交 | `87bfbfd4643d3da790fd692fd29f45ed104431b1` |
+| 合并前的定制分支提交 | `574e31392b4af029be97835b3c51748cf8c13e9b` |
+| 上次合并提交 | `87bfbfd46`，2026-10-12，v0.1.107 |
+| 上次纳入的上游提交 | `1b5877a6f19a6c9229d12c2a3cb1f3efb1b01bd2` |
+| 本次纳入的上游提交 | `295f947dac548af954d0f792b8631269bb423fd0` |
+| 本次源码合并提交 | `5316184f8e6e653cecd43130f20134eb33a3ab67` |
 | 本次源码版本 | `0.1.107`，包含该正式版本发布后的 main 更新 |
 
 本次同步把上游合并到定制分支，保留两边历史。源码合并、Git 提交、推送和运行服务更新是四个不同的动作。
-源码同步完成后，已按用户要求把本机和 50 都部署到 **0.1.107**，实际发布记录见第 11 节。
-运行制品来自 `22f85d1acff2645ea59292debcb0ef33696de599`；随后维护文档的提交不改变运行代码。
-本次同步与交接提交尚未推送到 `origin`，50 的源码通过 Git bundle 同步。
+源码同步完成后，已按用户要求把本机和 50 都部署到 **0.1.107**，最近一次发布记录见第 12 节。
+运行制品来自 `5316184f8e6e653cecd43130f20134eb33a3ab67`；随后维护文档的提交不改变运行代码。
+2026-10-13 核对 `origin/feature/zpmodified` 已包含该源码合并提交；本次部署文档另行提交。50 的源码通过 Git bundle 同步。
 
-上游在本次范围内新增了持久化任务运行机制，并已把 `coordinate_bots` 接入，替换旧的 `room-handoffs` 树。
+上游在前一次同步范围内新增了持久化任务运行机制，并已把 `coordinate_bots` 接入，替换旧的 `room-handoffs` 树。
 新机制的权限继承、任务状态、取消、等待用户输入、重启恢复和旧记录迁移都属于合并时必须检查的路径。
 部分其他委派路径仍在后续迁移计划内，不能仅凭版本号认为整个迁移已经完成。
+此次新增 33 个上游提交，主要是 Full Access 随引擎切换保留、返回主聊天按钮、Live 通话记录和通话资格检查；包版本号仍为 0.1.107。
 
 ## 2. 必须保留的定制
 
@@ -69,22 +70,26 @@ CLI 和身份信息保存在容器的持久 HOME `/data`，更新镜像不应把
 | --- | --- | --- |
 | 主机 | 当前开发电脑 | `108.186.129.50` |
 | 源码目录 | `/home/zhipeng/codes/OpenMausBot` | `/opt/OpenMausBot` |
-| 运行制品的源码 HEAD | `22f85d1ac`，包含本次源码合并 | `22f85d1ac`，同一份编译制品 |
+| 运行制品的源码 HEAD | `5316184f8`，包含本次源码合并 | `5316184f8`，同一份编译制品 |
 | 核对时应用版本 | `0.1.107` | `0.1.107` |
 | 对外地址 | `https://omb.oomdev.de5.net/` | `https://ombus.oomdev.de5.net/` |
 | Docker 主机端口 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
 | 公网入口 | Cloudflare Tunnel | 宿主机 systemd Caddy |
 | OMB 容器 | `omb`、`dind`、`cloudflared` | `omb`、`dind` |
-| 运行中的 Compose | `compose.yaml` + `compose.vm.yaml` + `compose.tunnel.yaml` | `compose.yaml` + `compose.vm.yaml` + `compose.mnt.yaml` |
+| 运行中的 Compose | `compose.yaml` + `compose.vm.yaml` + `compose.tunnel.yaml` + `compose.mnt.yaml` | `compose.yaml` + `compose.vm.yaml` + `compose.mnt.yaml` |
 | Caddy 容器 | 未启用 | 未启用 |
 | IP 自签 HTTPS overlay | 未启用 | 未启用 |
 
 ### 本机
 
-当前 `.env` 设置 `OMB_BIND_ADDRESS=0.0.0.0`、`OMB_HTTP_PORT=8080`、`OMB_PUBLIC_URL=https://omb.oomdev.de5.net`、`OMB_PAIRED_WEB_FULL_ACCESS=1`。
+当前 `.env` 设置 `OMB_BIND_ADDRESS=0.0.0.0`、`OMB_HTTP_PORT=8080`、`OMB_PUBLIC_URL=https://omb.oomdev.de5.net`、`OMB_PAIRED_WEB_FULL_ACCESS=1`、`OMB_PRO_PLAN=1`。
 Tunnel 与应用共享网络命名空间，连接 **`http://127.0.0.1:8799`**，Cloudflare 负责公网 TLS。
 Tunnel Token 位于被 Git 忽略的 `.omb-cloudflare/tunnel-token`。不需要把 Token 放进 Compose、文档或命令行。
 直接 HTTP 和 Tunnel 访问同一套本机数据；不同浏览器或不同访问源会有各自的登录状态。
+
+**本机已经使用宿主机网盘挂载，部署命令必须保留 `compose.mnt.yaml`。**
+Google Drive 和 OneDrive 分别由宿主机 `rclone-gdrive.service`、`rclone-onedrive.service` 挂载到 `/mnt/googledrive`、`/mnt/onedrive`；两个服务都已启用开机启动。
+应用容器通过 `/mnt` 的 `rslave` 绑定读取这些目录。网盘 OAuth 配置在宿主机的 rclone 配置中，不在应用镜像内，也不应复制给 50。
 
 ### 50：宿主机 Caddy
 
@@ -99,6 +104,7 @@ https://ombus.oomdev.de5.net:443
 
 50 的 `.env` **省略** `OMB_BIND_ADDRESS` 和 `OMB_HTTP_PORT`，使用基础 Compose 默认值 `127.0.0.1`、`8080`。
 `OMB_PUBLIC_URL` 与 `OMB_WEBHOOK_PUBLIC_URL` 都是 `https://ombus.oomdev.de5.net`，网页 Full Access 功能标志已开启。
+`OMB_PRO_PLAN=1` 使用上游为独立 Docker 服务提供的 Live 通话资格配置；本机也已设置。
 应用的 `OMB_LISTEN_HOST=0.0.0.0` 是容器内部设置，不代表宿主机把 8799 或 8080 暴露到公网。
 
 宿主机 Caddy 的配置是 `/etc/caddy/Caddyfile`，`caddy.service` 已启用开机启动。
@@ -330,14 +336,14 @@ git merge-base --is-ancestor <本次上游SHA> HEAD
 
 ### 8.1 本机服务
 
-当前使用基础 + VM + Tunnel：
+当前使用基础 + VM + Tunnel + 宿主机 `/mnt`。网盘 overlay 是本机现有功能，构建、更新与检查命令都应包含它：
 
 ```sh
 cd /home/zhipeng/codes/OpenMausBot
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml config --quiet
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml build omb
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml up -d --no-build --remove-orphans
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml ps
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml config --quiet
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml build omb
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml up -d --no-build --remove-orphans
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml ps
 curl --fail http://127.0.0.1:8080/api/health
 curl --fail https://omb.oomdev.de5.net/api/health
 ```
@@ -350,7 +356,7 @@ curl --fail https://omb.oomdev.de5.net/api/health
 
 ```sh
 docker build -f deploy/local/Dockerfile -t openmausbot-local:latest .
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml build omb
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml build omb
 ```
 
 `--pull` 是主动更新基础镜像的选择，不应每次部署都无意切换基础版本。
@@ -383,6 +389,7 @@ curl --fail https://ombus.oomdev.de5.net/api/health
 - 实际运行容器健康，启动后没有持续增加的 `RestartCount`。
 - 容器内 `/app/package.json` 是目标源码版本，同时记录实际镜像 ID／源码 SHA；相同版本号可能对应不同 main 提交。
 - 本机仍包含 Tunnel；50 仍是 loopback 8080 + 宿主机 HTTPS，并保留 `/mnt`。
+- 本机也保留 `/mnt`，以应用的 UID 1000 实际打开 Google Drive／OneDrive 目录确认可读；仅有宿主机 rclone active 不足以证明容器能访问网盘。
 - 数据卷与 UID/GID 正确，其他宿主机 Caddy 站点仍存在。
 - 健康接口能经预期公网入口访问。普通部署不再额外验证邮箱登录。
 - 明确记录是哪一台已更新，另一台是否仍在旧版本；不把 Git 已推送等同于容器已更新。
@@ -486,3 +493,60 @@ docker inspect openmausbot-omb-1 --format '{{.Image}} {{.State.Health.Status}} {
 
 本机证据在 `.omb-scratch/deploy-20261012/`，其中 `local-receipt.json` 与 `50-receipt.json` 记录端口、镜像、来源和挂载检查结果。
 50 另保留不含凭据和用户内容的 `.omb-scratch/deployment-receipt.json` 运维记录。上述运维记录不是数据备份。
+
+## 12. 再次同步与网盘恢复（2026-10-12 至 2026-10-13）
+
+此次上游目标固定为 `295f947dac548af954d0f792b8631269bb423fd0`，纳入 33 个提交，合并提交为 `5316184f8e6e653cecd43130f20134eb33a3ab67`。
+包版本仍是 0.1.107。功能变化是支持的引擎之间切换时保留 Full Access、隐藏 Thread 列表时返回主聊天、Live 通话记录和通话资格检查。
+
+### 合并与验证
+
+唯一文本冲突在 `ChatView.tsx`。保留本分支的临时流式消息，同时使用上游的 `lastNonReceipt`，让通话记录不会掩盖仍在工作的真实消息。
+本分支的引擎 Full Access 支持范围、Cursor 安装／用量与经过认证的查看器等定制保留。
+补充了 Codex → Cursor、Cursor → Antigravity 的权限保留断言。
+
+上游一条 Store 测试仍要求跟随 Bot 的线程在引擎切换后降为 Ask；根据新的契约修正为保留 Full，并保留旧字段状态、重载、独立模型和写入失败回滚的断言。
+该文件的 143 项检查重新全部通过，没有恢复旧的降级行为来迎合过时断言。
+
+| 检查 | 结果 |
+| --- | --- |
+| 单元／渲染器／路由检查 | 35 个文件，最终 1040 项通过；失败的 Store 文件修正后单独重跑 |
+| Live 与聊天重启恢复 | 2 个隔离端到端文件，19 项通过，其中重启恢复的一项也在上一组执行 |
+| 浏览器流式显示 | 1 项通过，保留暂停 rAF 时的缓冲完整性和最终去重 |
+| Electron 套餐传递 | 34 项通过 |
+| 静态与构建检查 | typecheck、lint、4073 条英文源字符串的翻译检查、163 个 Electron 模块语法检查、server／UI／原生资源构建和 packaged server smoke 通过 |
+| Compose 配置 | 两端现有组合解析通过，`OMB_PRO_PLAN` 的 0／1 均能传入容器 |
+| 最终镜像 | 两端校验 1108 个制品文件，DuckDB 内存 SQL 与 resvg PNG 渲染通过；本机临时数据的最终镜像启动和网页检查通过 |
+
+没有运行真实付费引擎、OpenAI 语音服务或邮箱登录验证。Live 的检查使用模拟提供方与独立数据目录。
+
+### 中断与实际发布
+
+2026-10-12 中断时，代码合并、本机镜像构建和 50 源码快进已经完成，**应用容器尚未切换**。
+2026-10-13 恢复工作后重新核对运行镜像、挂载、源码和归档；两端旧容器仍运行 `22f85d1ac` 的制品。
+随后完成两端更新，当前镜像来源均为 `5316184f8`，运行标签仍是 `openmausbot-vm:local`，发布标签为 `openmausbot-vm:0.1.107-5316184f8`。
+
+| 项目 | 本机 | 50 |
+| --- | --- | --- |
+| 实际镜像 ID | `sha256:07b088efd4a871c6c2c9fc018a69c63295752c44f78d28925934345425427a63` | `sha256:79f9f244f4bbd8ec54f1fbecfdf9d8894350342d992176ffb80f617f6b4e70e9` |
+| Compose | 基础 + VM + Tunnel + `/mnt` | 基础 + VM + `/mnt` |
+| Live 资格配置 | `.env` 和运行容器均为 `OMB_PRO_PLAN=1` | 同左 |
+| 健康 | healthy，RestartCount 0 | healthy，RestartCount 0 |
+
+制品聚合 SHA-256 是 `3370828c4c0da1587717809baf638e9a529585b3b45eebce278714c9df187e7f`。
+普通文字聊天不依赖 Live 套餐配置；Live 仍需应用里配置的 OpenAI Key。没有把用户引擎或网盘凭据装入镜像。
+
+### 本机网盘丢失的原因与修复
+
+之前的本机发布命令遗漏了 `compose.mnt.yaml`。因此宿主机 rclone 服务一直健康，但应用容器没有 `/mnt` 绑定，看不到 Google Drive／OneDrive。
+这是容器挂载配置遗漏，不是网盘重新授权的问题；昨天中断前的这次新镜像尚未发布，也没有触发网盘卸载。
+
+已将 `compose.mnt.yaml` 加入本机实际部署组合，保留原数据卷和端口，新增 `/mnt` 的读写 `rslave` 绑定。
+在应用 UID 1000 下实际打开 `/mnt/googledrive` 和 `/mnt/onedrive`，两个目录都能读取条目，容器的 mountinfo 也确认是 `fuse.rclone`。
+宿主机两个 rclone 服务继续 active／enabled，无需重新登录。第 3、8 节与通用部署 README 已明确要求后续更新保留这个 overlay。
+
+50 保持原有 `/mnt`、loopback 8080 和宿主机 Caddy；Caddy 完整配置哈希未变。
+两端的 loopback 和域名健康接口、网页制品校验及专用 VM daemon 连接通过。
+50 清理了旧应用镜像、本次上传归档、Git bundle 与临时构建目录，没有备份用户数据；本机保留 `openmausbot-vm:before-live-20261012` 供恢复。
+
+这轮记录在 `.omb-scratch/upstream-sync-20261012-live/`：`units.log`（原始失败）、`store-final.log`（修正后通过）、`live-e2e.log`、`stream-ui.log`、`local-receipt.json` 和 `50-receipt.json`。
