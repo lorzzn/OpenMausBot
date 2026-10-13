@@ -2,9 +2,9 @@ import { Children, createElement, isValidElement, type EffectCallback, type Reac
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ effects: [] as EffectCallback[], dispatch: vi.fn(), api: vi.fn(), create: vi.fn(), setDraft: vi.fn(), ready: false, hook: 0, admin: false, pairedAdmin: false, pairedWebFullAccess: false }));
+const fixture = vi.hoisted(() => ({ effects: [] as EffectCallback[], dispatch: vi.fn(), api: vi.fn(), create: vi.fn(), setDraft: vi.fn(), ready: false, hook: 0, admin: false,
+  profile: {} as Record<string, unknown> }));
 vi.mock("@/lib/use-owner-or-admin", () => ({ useOwnerOrAdmin: () => fixture.admin }));
-vi.mock("@/lib/use-paired-admin", () => ({ usePairedAdmin: () => fixture.pairedAdmin }));
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({ capabilities: {} }) }));
 vi.mock("react", async importOriginal => {
   const react = await importOriginal<typeof import("react")>();
@@ -13,7 +13,7 @@ vi.mock("react", async importOriginal => {
     const index = fixture.hook++;
     if (fixture.ready && index === 1) {
       const draft = state[0] as { bot: { name: string }; patch: (patch: { name: string }) => void };
-      if (draft.bot.name !== "Fixture") draft.patch({ name: "Fixture" });
+      if (draft.bot.name !== "Fixture") draft.patch({ name: "Fixture", ...fixture.profile });
     }
     if (index === 1) return [state[0], fixture.setDraft];
     return fixture.ready && index === 3 ? [true, state[1]] : state;
@@ -24,15 +24,9 @@ vi.mock("@/lib/create-configured-bot", async importOriginal => ({
 }));
 vi.mock("@/state/store", async importOriginal => {
   const store = await importOriginal<typeof import("@/state/store")>();
-  return { ...store, api: fixture.api, BotEditorStore: () => null, useStore: () => ({
-    state: fixture.pairedWebFullAccess
-      ? { ...store.initialState, config: { features: { pairedWebFullAccess: true } } }
-      : store.initialState,
-    dispatch: fixture.dispatch,
-  }) };
+  return { ...store, api: fixture.api, BotEditorStore: () => null, useStore: () => ({ state: store.initialState, dispatch: fixture.dispatch }) };
 });
 import { LocalNewBotDialog as NewBotDialog, CompanionNewBotDialog, NewBotDialog as RoutedNewBotDialog } from "./NewBotDialog";
-import { pairedWebApprovals } from "@/state/store";
 
 type Node = ReactElement<{ children?: ReactNode; role?: string; "aria-label"?: string; onClick?: () => void; onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void; disabled?: boolean }>;
 function nodes(value: ReactNode): Node[] {
@@ -48,25 +42,12 @@ function render(defaultsMode = false, onCreated?: () => void | Promise<void>) {
 }
 beforeEach(() => {
   fixture.effects = []; fixture.dispatch.mockReset(); fixture.api.mockReset();
-  fixture.ready = false; fixture.admin = false; fixture.pairedAdmin = false; fixture.pairedWebFullAccess = false; fixture.create.mockReset(); fixture.setDraft.mockReset();
+  fixture.ready = false; fixture.admin = false; fixture.create.mockReset(); fixture.setDraft.mockReset(); fixture.profile = {};
   fixture.api.mockReturnValue(new Promise(() => {}));
 });
 afterEach(() => vi.unstubAllGlobals());
 
 describe("bot draft dialog", () => {
-  it("passes the paired admin approval path to browser bot creation", async () => {
-    fixture.ready = true;
-    fixture.admin = true;
-    fixture.pairedAdmin = true;
-    fixture.pairedWebFullAccess = true;
-    fixture.create.mockResolvedValue({ bot: { id: "created", name: "Fixture" }, warnings: [] });
-    vi.stubGlobal("window", {});
-    const result = render();
-    result.nodes.filter(node => node.type === "button").at(-1)!.props.onClick!();
-    await vi.waitFor(() => expect(fixture.create).toHaveBeenCalledOnce());
-    expect(fixture.create.mock.calls[0]?.[3]).toBe(pairedWebApprovals);
-  });
-
   it("preserves upstream audience selection for browser admins before creation", () => {
     fixture.admin = true;
     vi.stubGlobal("window", {});
@@ -91,6 +72,20 @@ describe("bot draft dialog", () => {
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "botAdded", bot, preserveSelection: false });
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "error", message: "Caller failed" });
   });
+  it("creates a Full access bot at once, with no confirmation dialog", async () => {
+    fixture.ready = true;
+    fixture.profile = { approvalMode: "full" };
+    const bot = { id: "created", name: "Fixture", approvalMode: "full" };
+    fixture.create.mockResolvedValue({ bot, warnings: [] });
+    const result = render();
+    expect(result.html).not.toContain('role="alertdialog"');
+    result.nodes.filter(node => node.type === "button").at(-1)!.props.onClick!();
+    await vi.waitFor(() => expect(fixture.create).toHaveBeenCalledTimes(1));
+    expect(fixture.create.mock.calls[0][0].bot).toMatchObject({ name: "Fixture", approvalMode: "full" });
+    expect(fixture.create.mock.calls[0][0].consent).toEqual({});
+    await vi.waitFor(() => expect(fixture.dispatch).toHaveBeenCalledWith({ type: "botAdded", bot, preserveSelection: false }));
+  });
+
   it("keeps initial backward keyboard navigation inside the companion dialog", () => {
     let tree!: ReturnType<typeof CompanionNewBotDialog>;
     function Capture() { tree = CompanionNewBotDialog(); return tree; }

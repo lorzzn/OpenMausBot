@@ -9,7 +9,6 @@ import { stateForBot } from "@/lib/mascot";
 import { useStore, type Bot } from "@/state/store";
 import { approvalModeFor } from "../../../shared/approval-mode";
 import { connectorGrantsState, type ConnectorGrantsState } from "@/lib/connector-grants";
-import { usePairedAdmin } from "@/lib/use-paired-admin";
 
 export type BotPatch = Partial<
   Pick<
@@ -52,25 +51,22 @@ export type BotPatch = Partial<
   connectorTools?: Bot["connectorTools"] | null;
   connectorScopes?: Bot["connectorScopes"] | null;
   acknowledgeLocalAuto?: boolean;
-  confirmFullAccess?: boolean;
   acknowledgePeerScope?: boolean;
 };
 
 export function useBotSettingsDerived(bot: Bot) {
   const { state, dispatch } = useStore();
   const { capabilities } = useDesktopCapabilities();
-  const pairedAdmin = usePairedAdmin();
   const patch = (p: BotPatch) => dispatch({ type: "updateBot", botId: bot.id, patch: p });
   const activeState = stateForBot(bot);
   const mascotMotion = state.mascotMotion?.botId === bot.id ? state.mascotMotion : null;
   const engine = state.instances.find((instance) => instance.instanceId === bot.modelSelection.instanceId);
   // The approval level (ask / auto / full / custom) as the shared rule reads
   // it from the record — bots saved before approvalMode existed still carry
-  // only autoApprove. Custom needs the packaged desktop; Full also permits
-  // an explicit paired-admin grant on an opted-in self-hosted web server.
+  // only autoApprove. Custom needs the packaged desktop's trusted channel;
+  // Full is offered everywhere (owner decision, Oct 12).
   const approvalMode = approvalModeFor(bot);
-  const customAvailable = Boolean(window.ogb?.approvals && capabilities.host.packaged);
-  const trustedModesAvailable = customAvailable || Boolean(state.config?.features?.pairedWebFullAccess && pairedAdmin);
+  const trustedModesAvailable = Boolean(window.ogb?.approvals && capabilities.host.packaged);
   const canCoordinate = engine?.capabilities?.agentsMcp === true;
   const canUseConnectedApps = engine?.capabilities?.composioMcp === true;
   const connectedAppsConfigured = state.config?.composio?.configured === true;
@@ -96,7 +92,6 @@ export function useBotSettingsDerived(bot: Bot) {
     engine,
     approvalMode,
     trustedModesAvailable,
-    customAvailable,
     canCoordinate,
     canUseConnectedApps,
     connectedAppsConfigured,

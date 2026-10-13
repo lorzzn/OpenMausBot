@@ -45,16 +45,18 @@ export function approvalModeOptions(): ApprovalModeOption[] {
   }));
 }
 
-export function approvalModeOptionsFor(driverKind: string, trustedModesAvailable = true, customAvailable = trustedModesAvailable) {
+/** The levels this engine offers here. Full is offered wherever the engine
+ * runs it (owner decision, Oct 12); only Custom waits for the packaged
+ * desktop's private channel (`trustedModesAvailable`). */
+export function approvalModeOptionsFor(driverKind: string, trustedModesAvailable = true) {
   return approvalModeOptions()
     .filter((option) => supportsApprovalMode(driverKind, option.mode)
-      // Engines without a reviewer would make safe Auto behave like Ask.
-      // Their explicit Full grant is the working auto-approve choice.
-      && (option.mode !== "auto" || hasNativeAutoReview(driverKind) || !supportsApprovalMode(driverKind, "full"))
-      && (trustedModesAvailable || option.mode === "ask" || option.mode === "edits" || option.mode === "auto")
-      && (customAvailable || option.mode !== "custom"))
+      // Antigravity has no native reviewer. Offer its explicit full-access
+      // grant as Auto instead of a second choice that actually behaves as Ask.
+      && (driverKind !== "antigravityAgent" || option.mode !== "auto")
+      && (trustedModesAvailable || option.mode !== "custom"))
     .map((option) => {
-      if (option.mode === "full") {
+      if (driverKind === "antigravityAgent" && option.mode === "full") {
         return {
           ...option,
           label: t("approvalMode.antigravity.label"),
@@ -94,7 +96,6 @@ export function ApprovalModeSelector({
   wide = false,
   disabled = false,
   trustedModesAvailable = true,
-  customAvailable = trustedModesAvailable,
   trustedModesNotice,
   onManageCommandAllowlist,
 }: {
@@ -108,7 +109,6 @@ export function ApprovalModeSelector({
   wide?: boolean;
   disabled?: boolean;
   trustedModesAvailable?: boolean;
-  customAvailable?: boolean;
   trustedModesNotice?: string;
   onManageCommandAllowlist?: () => void;
 }) {
@@ -117,18 +117,17 @@ export function ApprovalModeSelector({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const savedMode = approvalModeFor({ approvalMode, autoApprove });
-  // Old Auto settings on engines with no reviewer still ask. Never display or
-  // silently grant Full until the person explicitly selects it.
-  const mode = savedMode === "auto" && !hasNativeAutoReview(driverKind) && supportsApprovalMode(driverKind, "full")
-    ? "ask" : savedMode;
+  // Old Antigravity Auto settings still ask. Do not display or silently grant
+  // the new Auto/full-access behavior until the user explicitly selects it.
+  const mode = driverKind === "antigravityAgent" && savedMode === "auto" ? "ask" : savedMode;
   const allOptions = approvalModeOptions();
   const current = approvalModeOptionsFor(driverKind).find((option) => option.mode === mode)
     ?? allOptions.find((option) => option.mode === mode)
     ?? allOptions[0];
-  const visibleOptions = approvalModeOptionsFor(driverKind, trustedModesAvailable, customAvailable);
+  const visibleOptions = approvalModeOptionsFor(driverKind, trustedModesAvailable);
   const requiresLocalDesktop = approvalModeSelectionRequiresLocalDesktop(
     mode,
-    customAvailable,
+    trustedModesAvailable,
   );
 
   useEffect(() => {
@@ -260,13 +259,9 @@ export function ApprovalModeSelector({
               );
             })}
             {!visibleOptions.some((option) => option.mode === "full") && allowlistAction}
-            {!trustedModesAvailable && (trustedModesNotice || driverKind === "codex" || driverKind === "antigravityAgent" || requiresLocalDesktop) && (
+            {!trustedModesAvailable && (trustedModesNotice || driverKind === "codex" || requiresLocalDesktop) && (
               <div className="border-t border-hairline/20 px-4 py-2.5 text-[11.5px] leading-snug text-ink-secondary">
-                {trustedModesNotice ?? (requiresLocalDesktop
-                  ? t("approvalMode.customLocalOnlyDot")
-                  : driverKind === "antigravityAgent"
-                    ? t("approvalMode.antigravityLocalOnly")
-                    : t("approvalMode.trustedLocalOnly"))}
+                {trustedModesNotice ?? t("approvalMode.customLocalOnlyDot")}
               </div>
             )}
           </div>

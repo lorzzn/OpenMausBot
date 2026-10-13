@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Plus, Trash2, X } from "lucide-react";
-import { api, BotEditorStore, pairedWebApprovals, persistBotUpdate, useStore, type Bot, type ModelSelection } from "@/state/store";
+import { api, BotEditorStore, useStore, type Bot, type ModelSelection } from "@/state/store";
 import { BotCreationDraft, EMPTY_BOT_DEFAULTS } from "@/lib/bot-creation-draft";
 import { createConfiguredBot, preparedBotTemplate } from "@/lib/create-configured-bot";
 import { BOT_ROLES, roleProfilePatch } from "@/lib/bot-roles";
@@ -8,7 +8,6 @@ import { chosenPreset, presetDraftPatch, presetGroups, presetPictureFile, preset
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
-import { usePairedAdmin } from "@/lib/use-paired-admin";
 import { visibilityFromForm, type VisibilityMode } from "./bot-settings/VisibilitySection";
 import type { NewBotDefaults } from "../../shared/new-bot-defaults";
 import type { Routine } from "@/lib/routines";
@@ -23,7 +22,6 @@ import { useBotSettingsDerived } from "./bot-settings/useBotSettingsDerived";
 import { BotEditorContext } from "./bot-settings/BotEditorContext";
 import { inputCls } from "./bot-settings/field";
 import { RoutineEditor } from "./RoutinesPage";
-import { FullAccessWarning } from "./FullAccessWarning";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { SharePresetDialog } from "./SharePresetDialog";
 import { SettingRow } from "./SettingsPrimitives";
@@ -82,11 +80,10 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
   const savingRef = useRef(false);
   const alive = useRef(true);
   const [error, setError] = useState("");
-  const [warning, setWarning] = useState<"full" | "local" | null>(null);
+  const [warning, setWarning] = useState<"local" | null>(null);
   const [audience, setAudience] = useState<VisibilityMode>("everyone");
   const [people, setPeople] = useState("");
   const ownerOrAdmin = useOwnerOrAdmin();
-  const pairedAdmin = usePairedAdmin();
   const choosesVisibility = !defaultsMode && typeof window !== "undefined" && !window.ogb && ownerOrAdmin === true;
   const dialog = useRef<HTMLDivElement>(null);
   const closeRef = useRef(() => {});
@@ -138,7 +135,6 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
   }, []);
   const save = async () => {
     if (!ready || savingRef.current || parent.state.botCreationPending) return;
-    if (!defaultsMode && draft.bot.approvalMode === "full" && !draft.consent.confirmFullAccess) { setWarning("full"); return; }
     if (!defaultsMode && draft.bot.approvalMode === "auto" && draft.bot.computer === "local" && !draft.consent.acknowledgeLocalAuto) { setWarning("local"); return; }
     const visibility = choosesVisibility ? visibilityFromForm(audience, people) : null;
     if (visibility && !visibility.ok) { setError(t("botSettings.visibility.needPeople")); return; }
@@ -147,12 +143,7 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
     try {
       if (defaultsMode) await api("/api/config", { method: "PATCH", body: JSON.stringify({ newBotDefaults: await preparedBotTemplate(draft) }) });
       else {
-        const approvals = typeof window === "undefined" ? undefined : window.ogb?.approvals ?? (
-          parent.state.config?.features?.pairedWebFullAccess && pairedAdmin ? pairedWebApprovals : undefined
-        );
-        const { bot, warnings } = await createConfiguredBot(
-          draft, api, persistBotUpdate, approvals, visibility?.ok ? visibility.visibility : undefined,
-        );
+        const { bot, warnings } = await createConfiguredBot(draft, undefined, undefined, undefined, visibility?.ok ? visibility.visibility : undefined);
         parent.dispatch({ type: "botAdded", bot, preserveSelection });
         if (warnings.length) parent.dispatch({ type: "error", message: warnings.join("\n") });
         try { await onCreated?.(bot); }
@@ -239,7 +230,6 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
           {saving && <Loader2 size={15} className="animate-spin" />}{t(defaultsMode ? "newBot.saveDefaults" : "newBot.create")}
         </button>
       </div>
-      <FullAccessWarning open={warning === "full"} onCancel={() => setWarning(null)} onConfirm={() => { draft.consent.confirmFullAccess = true; setWarning(null); void save(); }} />
       <LocalComputerAutoWarning open={warning === "local"} onCancel={() => setWarning(null)} onConfirm={() => { draft.consent.acknowledgeLocalAuto = true; setWarning(null); void save(); }} />
     </div>
   </div>;

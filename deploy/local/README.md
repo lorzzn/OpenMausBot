@@ -199,14 +199,19 @@ docker compose exec omb node dist-server/openmausbot.js pair
 
 ## Auto-approve all tools in the web app
 
-Set `OMB_PAIRED_WEB_FULL_ACCESS=1` in `.env`, then recreate the app container.
-In a paired admin browser, open a bot's approval selector and choose
-**Auto (full access)**. Confirm the warning. Bot settings can apply the choice
-to all existing and future threads; the chat composer changes only the current
-thread. This mode automatically allows tool permission requests without a
-reviewer. Questions and separate OpenMausBot confirmations still need an
-answer. The setting is off by default and cannot be granted through the
-loopback API or a non-admin paired session.
+Open a bot's approval selector and choose **Full access** (Antigravity calls
+it **Auto (full access)**). Upstream 0.1.108 supports this in the web app using
+the ordinary authenticated API; no environment opt-in or confirmation dialog
+is needed. Bot settings apply the choice to all existing and future threads;
+the chat composer changes only the current thread. This mode automatically
+allows tool permission requests without a reviewer, including OpenMausBot's
+configuration tools within the bot's scope. Questions and missing credentials
+still need an answer. Custom permissions remain restricted to the packaged
+desktop app; hosted workspace policy and session scopes still apply.
+
+This fork also supports Full access on Kimi, Droid, Hermes, Pi and Custom ACP.
+`OMB_PAIRED_WEB_FULL_ACCESS` and `/paired-full-access` have been retired; remove
+that obsolete setting from existing `.env` files when upgrading.
 
 On Windows, `./maus.ps1` forwards arguments to Compose using the repository
 directory. It respects Docker's selected context and `DOCKER_CONTEXT`.

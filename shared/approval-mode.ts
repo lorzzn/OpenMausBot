@@ -23,8 +23,8 @@ export function supportsApprovalMode(driverKind: string | undefined, mode: Appro
   // ACP and Pi permission requests also pass through the harness, where Full
   // answers each tool request. Question cards still wait for the person.
   return ["codex", "claudeAgent", "antigravityAgent", "cursorAgent", "grokAgent", "opencodeGo", "qwenAgent", "geminiAgent",
-    "kimiAgent", "droidAgent", "hermesAgent", "customAcp", "piAgent", "clineAgent",
-    "openai-compat", "grok", "minimax", "mistral", "cerebras", "groq"].includes(driverKind ?? "");
+    "kimiAgent", "droidAgent", "hermesAgent", "customAcp", "piAgent",
+    "clineAgent", "openai-compat", "grok", "minimax", "mistral", "cerebras", "groq", "meta", "museCode"].includes(driverKind ?? "");
 }
 
 /** Whether switching engines must first drop this level to Ask. A Custom

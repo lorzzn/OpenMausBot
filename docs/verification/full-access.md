@@ -3,8 +3,7 @@
 Run the isolated integration recipe:
 
 ```sh
-pnpm exec vitest run server/full-access-workflows.e2e.test.ts
-pnpm exec vitest run server/paired-full-access.e2e.test.ts server/approval-mode.test.ts server/auto-approve.test.ts
+pnpm exec vitest run server/web-full-access.e2e.test.ts server/full-access-workflows.e2e.test.ts
 pnpm exec vitest run server/team-setup-requests.test.ts server/profile-requests.test.ts server/routine-requests.test.ts
 pnpm exec electron scripts/smoke-approval-modes.cjs --all-threads-only
 pnpm typecheck
@@ -17,12 +16,6 @@ Full Access into its disposable saved state. It restarts against the same
 temporary home with a restricted environment. No production grant bypass or
 live application data is used. Both server processes are stopped before the
 fixture is removed.
-
-The paired-web test starts two disposable servers, one with the opt-in off and
-one with it on. It proves that a loopback caller, a client session, an admin
-bearer token, a cross-origin request, and an unconfirmed request cannot grant
-Full access. A paired admin cookie can grant one thread or every thread and
-revoke the grant. Neither test changes the running Docker workspace.
 
 The repository's scripted Claude fixture calls the real injected agents MCP
 proxy. Its tool choices and final narration are deterministic, not evidence
@@ -50,11 +43,12 @@ of a real provider's planning quality or authentication.
 ## Evidence and limits
 
 The desktop smoke uses a disposable Electron utility-process server and the
-real private approval bridge. It covers one confirmed Full Access grant for
+real private approval bridge. It covers one Full Access grant for
 all existing, archived and future threads, including mixed Claude, Codex,
 Grok and Antigravity providers. Other bots and per-thread model choices stay
-unchanged. The real settings confirmation is driven in a hidden fixture
-window, including Cancel, the all-threads checkbox and the committed result.
+unchanged. The real composer and settings selectors are driven in a hidden
+fixture window: picking Full access applies at once, with no confirmation
+dialog, and the committed result is checked.
 Screenshots are saved under `.omb-scratch/verify-evidence/provider-fixes/`.
 Provider processes are fake; this does not test live account access.
 
@@ -68,3 +62,16 @@ The first recipe verifies server and MCP behavior, not the rendered review UI,
 desktop permission-grant gesture, or real-model instruction following. The
 test starts from fixture-only saved grants; it does not test granting Full
 Access through the desktop.
+
+## Fork web compatibility
+
+`server/web-full-access.e2e.test.ts` uses a disposable server with no Full Access
+opt-in. It checks the ordinary upstream PATCH routes from loopback, an admin
+cookie and an admin bearer token; unpaired, client-only and cross-origin calls
+still fail. It checks single-thread changes, all-thread changes and returning
+to Ask. Custom still needs the packaged desktop. The obsolete paired-web
+endpoint and feature flag are absent. No live login or pairing code is used.
+
+The fork also retains Full Access mappings for Kimi, Droid, Hermes, Pi and
+Custom ACP; see `server/approval-mode.test.ts`, the ACP permission matrix and
+`server/runtime/capabilities.test.ts`.

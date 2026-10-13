@@ -83,10 +83,26 @@ describe("Cursor browser authorization", () => {
     const { home, environment } = fixture();
     const controller = new CursorAuthController({ cli: FAKE, environment: () => environment,
       authenticated: probeCursorAuth, lifetimeMs: 250 }); controllers.push(controller);
-    const start = await controller.start();
-    await expect.poll(async () => (await controller.get(start.flowId!)).phase).toBe("expired");
-    await controller.cancel();
-    expect(() => process.kill(Number(readFileSync(join(home, "cursor-login.pid"), "utf8")), 0)).toThrow();
+    // Fire the expiry callback after the real CLI has issued its link. A
+    // 250 ms wall deadline can race Node startup; process cleanup keeps real timers.
+    const setTimer = globalThis.setTimeout;
+    let expire: (() => void) | undefined;
+    const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => {
+      if (delay === 250) {
+        expire = () => callback(...args);
+        return setTimer(() => {}, 60_000);
+      }
+      return setTimer(callback, delay, ...args);
+    });
+    try {
+      const start = await controller.start();
+      expect(start.phase).toBe("waiting");
+      expect(expire).toBeTypeOf("function");
+      expire!();
+      expect((await controller.get(start.flowId!)).phase).toBe("expired");
+      await controller.cancel();
+      expect(() => process.kill(Number(readFileSync(join(home, "cursor-login.pid"), "utf8")), 0)).toThrow();
+    } finally { timer.mockRestore(); }
   });
   it("releases the account if the configured executable is missing", async () => {
     const { home, environment, controller } = fixture();

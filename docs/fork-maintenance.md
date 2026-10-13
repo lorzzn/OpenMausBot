@@ -11,22 +11,18 @@
 | 定制分支 | `feature/zpmodified` |
 | 自有远端 `origin` | `git@github.com:lorzzn/OpenMausBot.git` |
 | 官方远端 `upstream` | `https://github.com/milind-soni/OpenMausBot.git` |
-| 合并前的定制分支提交 | `574e31392b4af029be97835b3c51748cf8c13e9b` |
-| 上次合并提交 | `87bfbfd46`，2026-10-12，v0.1.107 |
-| 上次纳入的上游提交 | `1b5877a6f19a6c9229d12c2a3cb1f3efb1b01bd2` |
-| 本次纳入的上游提交 | `295f947dac548af954d0f792b8631269bb423fd0` |
-| 本次源码合并提交 | `5316184f8e6e653cecd43130f20134eb33a3ab67` |
-| 本次源码版本 | `0.1.107`，包含该正式版本发布后的 main 更新 |
+| 合并前的定制分支提交 | `f19ea3685bbeaeae5ffe855ee8648c95eb909610` |
+| 上次合并提交 | `5316184f8`，0.1.107 |
+| 上次纳入的上游提交 | `295f947dac548af954d0f792b8631269bb423fd0` |
+| 本次纳入的上游提交 | `a2b2b1b723539c0506766067c6cbd6989c189e12` |
+| 本次源码版本 | `0.1.108` |
 
-本次同步把上游合并到定制分支，保留两边历史。源码合并、Git 提交、推送和运行服务更新是四个不同的动作。
-源码同步完成后，已按用户要求把本机和 50 都部署到 **0.1.107**，最近一次发布记录见第 12 节。
-运行制品来自 `5316184f8e6e653cecd43130f20134eb33a3ab67`；随后维护文档的提交不改变运行代码。
-2026-10-13 核对 `origin/feature/zpmodified` 已包含该源码合并提交；本次部署文档另行提交。50 的源码通过 Git bundle 同步。
+本次同步纳入 **214 个上游提交**（包括 merge），固定目标为上表完整 SHA。
+采用上游网页 Full Access 的统一 API／界面流程，移除旧的配对管理员专用桥接；保留额外引擎适配、网页流式和其他定制。
+上游完成更多任务运行路径迁移、新增团队批量设置、上下文余量提醒、浏览器登录管理、启动例行任务、Meta／Muse 引擎，并把主要 HTTP 路由拆到 `server/routes/`。
+合并时必须把 fork 补丁迁移到路由的新位置，不能在 `index.ts` 恢复已被拆出的旧处理器。
 
-上游在前一次同步范围内新增了持久化任务运行机制，并已把 `coordinate_bots` 接入，替换旧的 `room-handoffs` 树。
-新机制的权限继承、任务状态、取消、等待用户输入、重启恢复和旧记录迁移都属于合并时必须检查的路径。
-部分其他委派路径仍在后续迁移计划内，不能仅凭版本号认为整个迁移已经完成。
-此次新增 33 个上游提交，主要是 Full Access 随引擎切换保留、返回主聊天按钮、Live 通话记录和通话资格检查；包版本号仍为 0.1.107。
+源码合并、Git 提交、推送和容器发布分别记录。两端最近一次已完成部署仍见第 12 节；本次发布完成后更新第 3 节和第 13 节。
 
 ## 2. 必须保留的定制
 
@@ -34,21 +30,23 @@
 | --- | --- | --- |
 | 网页流式显示 | `src/state/streaming.ts`、`src/state/store.tsx`、`src/components/StreamingReply.tsx`、`ChatView.tsx`、`GroupView.tsx` | 按 thread 订阅文本和 reasoning；完成时清空缓冲；切换聊天、后台页面和暂停 rAF 时不丢尾部、不重复回复 |
 | 流式代码块渲染 | `src/components/ChatMarkdown.tsx` | 流式阶段延迟高亮；同时采用上游的超大代码块纯文本策略、公式按需加载和附件渲染 |
-| 网页 Full Access | `shared/approval-mode.ts`、`server/auto-approve.ts`、`server/index.ts`、权限选择组件 | 配对管理员在服务器开启功能后可以选择 Full Access；所有支持的引擎自动批准工具请求；用户问题仍需回答 |
+| 额外引擎 Full Access | `shared/approval-mode.ts`、ACP／Pi 驱动、`server/runtime/capabilities.test.ts` | 使用上游统一网页/API 流程；保留 Kimi、Droid、Hermes、Pi、Custom ACP 的 Full 支持；用户问题仍需回答 |
 | Cursor 面板安装／登录／更新 | `server/drivers/cursor-{auth,install,release}.ts`、`server/drivers/acp/cursor.ts`、`server/harness/registry.ts`、`CursorSignIn.tsx`、`EngineSetup.tsx` | 按需安装，网页完成官方登录，检测版本并原生更新；优先使用实例 HOME 内安装的 CLI，不依赖镜像预装 |
 | Cursor／Antigravity 套餐用量 | `server/plan-usage.ts`、`PlanUsage.tsx`、相关 fixture | 显示提供方返回的窗口、月度额度、模型池和重置时间；不可获取时显示真实状态，不编造额度 |
-| VM 查看地址 | `server/local-vm-viewer.ts`、查看器路由 | 浏览器使用当前访问源／代理信息生成地址；局域网、Tunnel、宿主机 HTTPS 都不跳到客户端的 `127.0.0.1` |
+| VM 查看地址 | `server/local-vm-viewer.ts`、`server/routes/computers.ts`、查看器路由 | 浏览器使用当前访问源／代理信息生成地址；局域网、Tunnel、宿主机 HTTPS 都不跳到客户端的 `127.0.0.1` |
 | 单端口 HTTP 部署 | `compose.yaml`、`server/index.ts` | Docker 直连应用 8799；应用自身处理 `/hooks/` 和经过认证的桌面查看器，不依赖 Caddy 容器 |
 | HTTP UUID 兼容 | `src/lib/crypto-compat.ts`、`src/main.tsx` | 非安全 HTTP 源缺少 `crypto.randomUUID` 时使用 `getRandomValues`；HTTPS 的原生实现保持原样 |
 | 大工具输出的聊天投影 | `server/tool-title.ts`、`server/index.ts`、`server/store.ts` | 工具标题显示上限 2048 字符，公开聊天投影不携带庞大原始字段；避免含大量图片／长命令的聊天一次传输数百万字符 |
 | 可选宿主机文件挂载 | `compose.mnt.yaml` | `/mnt` 以读写方式提供给应用，使用 `rslave` 传播后续挂载；不自动提供给 Local VM 桌面 |
-| 应用目录内的 CLI 更新 | `server/drivers/cli-update-command.ts`、`server/engine-install.ts`、`server/index.ts` | Claude 等 npm 安装的引擎更新应用实际使用的副本，避免更新到另一个全局 prefix |
+| 应用目录内的 CLI 更新 | `server/drivers/cli-update-command.ts`、`server/engine-install.ts`、`server/routes/instances.ts` | Claude 等 npm 安装的引擎更新应用实际使用的副本，避免更新到另一个全局 prefix |
 
 ### Full Access 与 Auto 的区别
 
 - `full` 是用户已选择的“直接批准工具”模式，既可以由引擎执行，也可以由 harness 回答残留权限请求。
 - `auto` 仍表示提供方原生的安全审核，不能因为某引擎支持 `full` 就假定它也有原生审核器。
-- `OMB_PAIRED_WEB_FULL_ACCESS=1` 允许配对管理员使用网页 Full Access；它不会把每个现有 Bot 自动改成 Full。
+- **从 0.1.108 起采用上游原生网页 Full Access**：普通已授权 API、浏览器、桌面都能设置；无需环境开关和二次确认。Custom 仍限桌面私有通道，托管工作区仍按其 operator policy。
+- `OMB_PAIRED_WEB_FULL_ACCESS`、`pairedWebApprovals`、`/paired-full-access` 和旧确认 UI 已移除。升级时删除 `.env` 里的旧开关。不要在后续合并中把它们恢复。
+- `server/web-full-access.e2e.test.ts` 验证新流程及原有身份／跨源／会话 scope 检查。Full 不取消登录，也不会批量修改每个已有 Bot 的设置。
 - Bot、thread 和新 Bot 的预设各有自己的设置。修改预设不等于修改所有旧 Bot。
 - 新任务运行机制会计算主管与目标 Bot 的有效权限，并限制权限继承的来源。外部请求不应被当成人的 Full Access 授权。
 - 新增引擎时，同时核对 `shared/approval-mode.ts`、驱动权限处理和 `server/runtime/capabilities.test.ts`。不能只改能力声明。
@@ -82,7 +80,7 @@ CLI 和身份信息保存在容器的持久 HOME `/data`，更新镜像不应把
 
 ### 本机
 
-当前 `.env` 设置 `OMB_BIND_ADDRESS=0.0.0.0`、`OMB_HTTP_PORT=8080`、`OMB_PUBLIC_URL=https://omb.oomdev.de5.net`、`OMB_PAIRED_WEB_FULL_ACCESS=1`、`OMB_PRO_PLAN=1`。
+当前 `.env` 设置 `OMB_BIND_ADDRESS=0.0.0.0`、`OMB_HTTP_PORT=8080`、`OMB_PUBLIC_URL=https://omb.oomdev.de5.net`、`OMB_PRO_PLAN=1`。
 Tunnel 与应用共享网络命名空间，连接 **`http://127.0.0.1:8799`**，Cloudflare 负责公网 TLS。
 Tunnel Token 位于被 Git 忽略的 `.omb-cloudflare/tunnel-token`。不需要把 Token 放进 Compose、文档或命令行。
 直接 HTTP 和 Tunnel 访问同一套本机数据；不同浏览器或不同访问源会有各自的登录状态。
@@ -103,7 +101,7 @@ https://ombus.oomdev.de5.net:443
 ```
 
 50 的 `.env` **省略** `OMB_BIND_ADDRESS` 和 `OMB_HTTP_PORT`，使用基础 Compose 默认值 `127.0.0.1`、`8080`。
-`OMB_PUBLIC_URL` 与 `OMB_WEBHOOK_PUBLIC_URL` 都是 `https://ombus.oomdev.de5.net`，网页 Full Access 功能标志已开启。
+`OMB_PUBLIC_URL` 与 `OMB_WEBHOOK_PUBLIC_URL` 都是 `https://ombus.oomdev.de5.net`。网页 Full Access 使用上游接口，已不需要功能标志。
 `OMB_PRO_PLAN=1` 使用上游为独立 Docker 服务提供的 Live 通话资格配置；本机也已设置。
 应用的 `OMB_LISTEN_HOST=0.0.0.0` 是容器内部设置，不代表宿主机把 8799 或 8080 暴露到公网。
 
@@ -229,7 +227,7 @@ git diff --name-only --diff-filter=U
 - **安装结果**：“请求成功”不足以显示“已安装”；保留上游对返回引擎状态的验证，也要保留 Cursor 原生安装／更新入口。
 - **任务权限**：运行时能力测试要体现本分支的 Full Access。保持未知引擎拒绝提升权限、外部请求不继承主管授权、Auto 仍要求原生审核器的测试。
 - **验证 launcher**：新增位置参数后核对所有调用者，尤其是网页静态目录与本分支的隔离配对管理员测试参数，避免把 boolean 当成路径。
-- **路由计数 gate**：核对 `/hooks/`、VM 授权和配对 Full Access 路由。上游移走旧路由时降低对应计数；不要删测试、放宽成任意计数。
+- **路由计数 gate**：核对应用端口的 `/hooks/` 和新电脑路由中的 VM 授权；旧配对 Full Access 路由不再保留。上游移走旧路由时降低对应计数；不要删测试、放宽成任意计数。
 - **翻译**：按 JSON 键进行三方合并，保留新增字段。英文变化后同步审阅译文与 `source-hashes.json`；不要只接受哈希却不读译文。
 - **已有测试失败**：先看错误是否来自具体冲突、测试夹具或 Node／CLI 环境。修正真实原因，保留有效断言，避免用延时／跳过／重试掩盖功能问题。
 
@@ -291,7 +289,7 @@ pnpm exec vitest run \
   scripts/testing/index-route-ratchet.test.ts
 ```
 
-涉及持久化任务机制时，再检查 runtime 协作、重启恢复、配对 Full Access 等隔离端到端测试。
+涉及持久化任务机制时，再检查 runtime 协作、重启恢复、网页 Full Access 等隔离端到端测试。
 涉及聊天渲染和流式缓冲时，按 [Chat UI recipe](verification/chat-ui.md) 执行真实渲染器验证：
 
 ```sh
@@ -349,8 +347,8 @@ curl --fail https://omb.oomdev.de5.net/api/health
 ```
 
 `deploy/local/Dockerfile.vm` 从源码构建 UI／server，再使用现有 `openmausbot-local:latest` 运行时。
-如果上游新增运行时依赖，核对编译是否把它内联、是否有原生外部依赖，以及基础镜像是否包含它们。
-本次新增 DuckDB、resvg 等依赖。两份本地 Dockerfile 都运行上游的 `prepare-duckdb.mjs`，把当前平台的原生资源复制到 `/app/duckdb`，并设置 `OMB_DUCKDB_DIR`。
+如果上游新增运行时依赖，核对编译是否把它内联、是否有原生外部依赖，以及基础镜像是否包含它们。Muse SDK 是零运行时依赖的纯 JS，可被内联；1Password SDK 需要 SDK、sdk-core 和 `core_bg.wasm`，由新版 `prepare-duckdb.mjs` 与 DuckDB 一起打包。
+最近两次更新新增 DuckDB、resvg 与 1Password SDK 的原生／WASM 资源。两份本地 Dockerfile 都运行上游的 `prepare-duckdb.mjs`，把当前平台的原生资源复制到 `/app/duckdb`，并设置 `OMB_DUCKDB_DIR`。
 部署时应以最终镜像的隔离启动检查为准；仅有本机 TypeScript 构建成功不足以证明镜像依赖完整。
 需要刷新基础运行时时，先构建基础，再构建 VM 应用镜像：
 
@@ -550,3 +548,39 @@ docker inspect openmausbot-omb-1 --format '{{.Image}} {{.State.Health.Status}} {
 50 清理了旧应用镜像、本次上传归档、Git bundle 与临时构建目录，没有备份用户数据；本机保留 `openmausbot-vm:before-live-20261012` 供恢复。
 
 这轮记录在 `.omb-scratch/upstream-sync-20261012-live/`：`units.log`（原始失败）、`store-final.log`（修正后通过）、`live-e2e.log`、`stream-ui.log`、`local-receipt.json` 和 `50-receipt.json`。
+
+## 13. 0.1.108 同步与 Full Access 简化（2026-10-13）
+
+### 合并决策
+
+- 网页 Full Access 改用上游普通 PATCH 路由：Bot 设置应用到全部 thread，composer 只改当前 thread；新 Bot 预设也走普通创建流程。
+- 删除配对管理员专用接口／桥接、环境开关、重复确认流程。配对与邮箱身份系统、会话管理、Custom 私有桌面保护继续使用上游实现。
+- 保留 Kimi、Droid、Hermes、Pi、Custom ACP 的 Full capability 和 native mode 映射；同时纳入上游 Meta／Muse 能力。Auto 仍是 native reviewer，不能把额外引擎的 Full 当成安全自动审核。
+- 保留网页文本／reasoning 流式订阅、后台/rAF 尾部与最终去重。保留 Cursor 安装、浏览器登录、原生更新和实例 HOME 下实际 CLI 的版本探测。
+- 迁移 fork 的 VM 地址／授权到 `server/routes/computers.ts`，Cursor 原生更新互斥及应用 npm prefix 到 `server/routes/instances.ts`，长工具输出投影到 `server/routes/bots-create.ts`。套餐用量由上游新 `status.ts` 路由调用 fork 的 fetch/cache 实现。
+- 本机部署仍必须保留 `/mnt` overlay，50 仍保持 loopback 8080 和宿主机 Caddy。两端数据各自独立。
+
+上游本次新增源文件行数 gate，首次接入时按 fork 已有流式、Cursor 用量、长输出和 Docker／viewer 定制初始化精确基线，并纳入原有 `plan-usage.ts`。检查的逻辑和 2000 行新增文件上限未放宽，后续修改必须拆分或降低基线。`index.ts` 的旧 route 块按上游移除，未恢复旧的巨型处理器。
+
+### 隔离验证
+
+证据目录：`.omb-scratch/upstream-sync-20261013-full/`。
+
+| 检查 | 结果 |
+| --- | --- |
+| 核心权限／驱动／Store／流式／Cursor 用量 | 32 文件共 995 项；首次 3 项失败，修正对应 3 文件后 22 项全通过，其余 29 文件已通过 |
+| 原生资源、ACP、Meta／Muse、viewer 路由 | 6 文件，215 项通过；4 项平台条件跳过 |
+| 独立线程、任务 roots/paths、房间协作、重启队列、新 Bot 预设 | 6 文件，75 项通过；2 项条件跳过 |
+| Full 配置工具工作流与新网页 Full／Custom 边界 | Full 工作流 1 项通过；网页 4 项通过，包含 cookie、bearer、单线程、全部线程、返回 Ask 和 Custom 拒绝 |
+| 完整 HTTP 路由回归 | 首次 294/295 通过；队列事件的异步落盘断言改为 `expect.poll` 后对应场景通过 |
+| 真实浏览器流式 | 1 项通过，暂停 rAF 后文本/reasoning 完整，完成时无重复 |
+| 静态检查 | Node 24 typecheck、lint、4256 条英文源字符串的翻译检查、163 个 Electron 模块语法检查通过 |
+| 构建与 packaged smoke | 清空生成目录后重新 build server；UI 与原生资源构建通过；仓库/node_modules 外独立启动、13 个 proxy 路径、MCP、worker、launcher 通过 |
+| Compose | 本机基础+VM+Tunnel+mnt、域名 HTTPS、IP HTTPS 配置解析通过 |
+
+修正的测试包括：旧 Full 文案改为上游文案；Cursor 过期测试在真实 CLI 发出链接后触发过期回调，清理仍使用真实进程计时器；新网页测试使用真实支持 Custom 的 fake Codex 检查私有通道，且按现有权限解析器断言未配对请求的 403。
+首次尝试用 `node --test` 跑 Vitest 文件，以及整体 fake timers 的过期测试均不是通过证据；已改用正确 runner 和范围明确的计时器回调。
+
+未运行完整跨平台 `pnpm test`、真实付费引擎、真实邮箱验证码或真实 1Password 账号。所有创建 Bot、改权限、发送消息和重启恢复场景均使用隔离 HOME／数据目录。
+
+容器发布结果在完成后补充。

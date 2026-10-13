@@ -13,7 +13,6 @@ vi.mock("@/state/store", async importOriginal => ({
 vi.mock("@/lib/use-owner-or-admin", () => ({ useOwnerOrAdmin: () => true }));
 vi.mock("./BotEditorContext", () => ({ useBotEditor: () => ({ draft: fixture.draft }) }));
 vi.mock("./ProposalStatus", () => ({ ProposalStatus: () => null }));
-vi.mock("../FullAccessWarning", () => ({ FullAccessWarning: () => null }));
 vi.mock("../LocalComputerAutoWarning", () => ({ LocalComputerAutoWarning: () => null }));
 vi.mock("../ApprovalModeSelector", async importOriginal => {
   const actual = await importOriginal<typeof import("../ApprovalModeSelector")>();
@@ -22,7 +21,7 @@ vi.mock("../ApprovalModeSelector", async importOriginal => {
     ApprovalModeSelector: (props: Parameters<typeof actual.ApprovalModeSelector>[0]) =>
       createElement("span", {
         "data-approval-options": actual.approvalModeOptionsFor(
-          props.driverKind, props.trustedModesAvailable, props.customAvailable,
+          props.driverKind, props.trustedModesAvailable,
         ).map(option => option.mode).join(","),
       }),
   };
@@ -35,24 +34,24 @@ const bot = {
   approvalMode: "ask", computer: "off",
 } as Bot;
 
-function renderOptions(trustedModesAvailable: boolean, customAvailable = false) {
+function renderOptions(trustedModesAvailable: boolean) {
   const derived = {
     patch: vi.fn(),
     engine: { displayName: "Antigravity", driverKind: "antigravityAgent" },
-    approvalMode: "ask", trustedModesAvailable, customAvailable,
+    approvalMode: "ask", trustedModesAvailable,
     canCoordinate: false, sectionName: "General",
   } as unknown as ReturnType<typeof useBotSettingsDerived>;
   return renderToStaticMarkup(createElement(PermissionsSection, { bot, derived }));
 }
 
 describe("new-bot approval options", () => {
-  it("offers Full access in a paired admin browser draft", () => {
+  it("offers Full access in a packaged desktop draft", () => {
     fixture.draft = true;
     expect(renderOptions(true)).toContain('data-approval-options="ask,edits,full"');
   });
 
-  it("keeps Full access hidden without a trusted grant path", () => {
+  it("offers Full access in a web draft without the desktop bridge", () => {
     fixture.draft = true;
-    expect(renderOptions(false)).toContain('data-approval-options="ask,edits"');
+    expect(renderOptions(false)).toContain('data-approval-options="ask,edits,full"');
   });
 });

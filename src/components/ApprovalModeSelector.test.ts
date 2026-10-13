@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { FullAccessWarning } from "./FullAccessWarning";
 
 import {
   ApprovalModeSelector,
@@ -11,14 +10,6 @@ import {
 } from "./ApprovalModeSelector";
 
 describe("approval mode selector", () => {
-  it("discloses delegated work in the Full access confirmation", () => {
-    const html = renderToStaticMarkup(createElement(FullAccessWarning, {
-      open: true, onCancel: () => {}, onConfirm: () => {},
-    }));
-    expect(html).toContain("tasks delegated by your Chief or other bots");
-    expect(html).toContain("does not enable Full access on other bots");
-    expect(html).not.toContain("Requests that come from another bot still get the usual checks");
-  });
   it("lists the approval levels with their plain-language copy", () => {
     expect(approvalModeOptions().map(({ mode, label, description }) => ({ mode, label, description }))).toEqual([
       {
@@ -65,13 +56,13 @@ describe("approval mode selector", () => {
   });
 
   it.each(["cursorAgent", "opencodeGo"])("offers Full access for %s, and no Edits level it cannot map", (kind) => {
-    expect(approvalModeOptionsFor(kind).map((option) => option.mode)).toEqual(kind === "cursorAgent" ? ["ask", "auto", "full"] : ["ask", "full"]);
-    expect(approvalModeOptionsFor(kind, false).map((option) => option.mode)).toEqual(kind === "cursorAgent" ? ["ask", "auto"] : ["ask"]);
+    expect(approvalModeOptionsFor(kind).map((option) => option.mode)).toEqual(["ask", "auto", "full"]);
+    expect(approvalModeOptionsFor(kind, false).map((option) => option.mode)).toEqual(["ask", "auto", "full"]);
   });
 
   it("offers Grok its native acceptEdits as Auto-accept edits", () => {
     expect(approvalModeOptionsFor("grokAgent").map((option) => option.mode)).toEqual(["ask", "edits", "auto", "full"]);
-    expect(approvalModeOptionsFor("grokAgent", false).map((option) => option.mode)).toEqual(["ask", "edits", "auto"]);
+    expect(approvalModeOptionsFor("grokAgent", false).map((option) => option.mode)).toEqual(["ask", "edits", "auto", "full"]);
   });
 
   it("offers Antigravity Auto as the explicit full-access grant, not native review", () => {
@@ -83,20 +74,7 @@ describe("approval mode selector", () => {
     ]);
     expect(options[2].chip).toBe("Auto");
     expect(options[2].description).toContain("Automatically approve tool requests");
-    expect(approvalModeOptionsFor("antigravityAgent", false).map((option) => option.mode)).toEqual(["ask", "edits"]);
-  });
-
-  it.each(["openai-compat", "kimiAgent", "droidAgent", "hermesAgent", "piAgent", "customAcp", "cerebras"])(
-    "offers explicit auto-approve for %s without pretending safe Auto reviews requests", (driverKind) => {
-      const options = approvalModeOptionsFor(driverKind, true, false);
-      expect(options.map((option) => option.mode)).toEqual(["ask", "full"]);
-      expect(options[1]?.label).toBe("Auto (full access)");
-      expect(approvalModeOptionsFor(driverKind, false, false).map((option) => option.mode)).toEqual(["ask"]);
-    },
-  );
-
-  it("shows Full but not desktop Custom in a paired web admin menu", () => {
-    expect(approvalModeOptionsFor("codex", true, false).map((option) => option.mode)).toEqual(["ask", "auto", "full"]);
+    expect(approvalModeOptionsFor("antigravityAgent", false).map((option) => option.mode)).toEqual(["ask", "edits", "full"]);
   });
 
   it("shows the effective Antigravity mode without upgrading saved Auto settings", () => {
@@ -118,24 +96,26 @@ describe("approval mode selector", () => {
     expect(approvalModeOptionsFor("customAgent").map((option) => option.mode)).toEqual(["ask", "auto"]);
   });
 
-  it("hides trusted modes when the packaged desktop bridge is unavailable", () => {
+  it("offers Full without the packaged desktop bridge and hides only Custom", () => {
     expect(approvalModeOptionsFor("codex", false).map((option) => option.mode)).toEqual([
       "ask",
       "auto",
+      "full",
     ]);
+    expect(approvalModeOptionsFor("claudeAgent", false).map((option) => option.mode)).toEqual(["ask", "edits", "auto", "full"]);
   });
 
   it("keeps the composer trigger icon-only and the settings trigger labeled", () => {
     const compact = renderToStaticMarkup(createElement(ApprovalModeSelector, {
       approvalMode: "full", providerName: "Grok", driverKind: "grokAgent", onSelect: () => {},
     }));
-    expect(compact).toContain('aria-label="Auto (full access) for Grok"');
-    expect(compact).toContain('title="Auto"');
-    expect(compact).not.toMatch(/<span class="truncate">Auto \(full access\)<\/span>/);
+    expect(compact).toContain('aria-label="Full access for Grok"');
+    expect(compact).toContain('title="Full access"');
+    expect(compact).not.toMatch(/<span class="truncate">Full access<\/span>/);
     const settings = renderToStaticMarkup(createElement(ApprovalModeSelector, {
       approvalMode: "full", providerName: "Grok", driverKind: "grokAgent", onSelect: () => {}, wide: true,
     }));
-    expect(settings).toMatch(/<span class="truncate">Auto \(full access\)<\/span>/);
+    expect(settings).toMatch(/<span class="truncate">Full access<\/span>/);
   });
 
   it("locks an existing Custom bot to the local packaged desktop", () => {
