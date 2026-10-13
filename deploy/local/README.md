@@ -133,6 +133,13 @@ For the current local installation it is `/data/.local/bin/rclone`, and
 `/data/.local/bin/rclone listremotes` should list `gdrive:` and `onedrive:`.
 Each installation uses its own cloud accounts and configuration directory.
 
+The current VPS installation also uses this overlay and its own host config
+directory. Its Compose command includes base + VM + mnt + rclone, without the
+Tunnel overlay. Per the user's choice, only the configuration is mounted there:
+the application container currently has no rclone executable. The existing cloud
+mount directories remain usable, but direct remote commands require installing
+or otherwise providing rclone separately.
+
 ## Live calls on a standalone server
 
 Set `OMB_PRO_PLAN=1` in `.env` to enable the upstream Live-call entitlement

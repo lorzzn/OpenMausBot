@@ -76,7 +76,7 @@ CLI 和身份信息保存在容器的持久 HOME `/data`，更新镜像不应把
 | Docker 主机端口 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
 | 公网入口 | Cloudflare Tunnel | 宿主机 systemd Caddy |
 | OMB 容器 | `omb`、`dind`、`cloudflared` | `omb`、`dind` |
-| 运行中的 Compose | `compose.yaml` + `compose.vm.yaml` + `compose.tunnel.yaml` + `compose.mnt.yaml` + `compose.rclone.yaml` | `compose.yaml` + `compose.vm.yaml` + `compose.mnt.yaml` |
+| 运行中的 Compose | `compose.yaml` + `compose.vm.yaml` + `compose.tunnel.yaml` + `compose.mnt.yaml` + `compose.rclone.yaml` | `compose.yaml` + `compose.vm.yaml` + `compose.mnt.yaml` + `compose.rclone.yaml` |
 | Caddy 容器 | 未启用 | 未启用 |
 | IP 自签 HTTPS overlay | 未启用 | 未启用 |
 
@@ -107,6 +107,9 @@ https://ombus.oomdev.de5.net:443
 `OMB_PUBLIC_URL` 与 `OMB_WEBHOOK_PUBLIC_URL` 都是 `https://ombus.oomdev.de5.net`。网页 Full Access 使用上游接口，已不需要功能标志。
 `OMB_PRO_PLAN=1` 使用上游为独立 Docker 服务提供的 Live 通话资格配置；本机也已设置。
 应用的 `OMB_LISTEN_HOST=0.0.0.0` 是容器内部设置，不代表宿主机把 8799 或 8080 暴露到公网。
+
+50 的 `.env` 也设置 `OMB_RCLONE_CONFIG_DIR=/home/zhipeng/.config/rclone`，通过同一份 `compose.rclone.yaml` 将该主机已有的配置目录读写挂到 `/data/.config/rclone`。使用 50 自己的配置，没有从本机复制账号。
+**用户要求 50 仅挂配置目录。** 宿主机已有 rclone，但应用容器目前没有 rclone 可执行文件；本次没有安装 CLI 或改 PATH。因此容器可以读取云盘配置和两个已有挂载目录，但要运行 `rclone copy gdrive:` 等命令仍需另行提供程序。
 
 宿主机 Caddy 的配置是 `/etc/caddy/Caddyfile`，`caddy.service` 已启用开机启动。
 它也服务 **Orca**（现有 IP 6768 与 `orcaus.oomdev.de5.net`）；改 OMB 路由时必须保留这些站点。
@@ -139,14 +142,14 @@ DNS 是 `ombus.oomdev.de5.net → 108.186.129.50` 的 A 记录，现有部署使
 ### 50 的 `/mnt` 与包装命令
 
 2026-10-12 核对发现：运行中容器的 Compose 标签包含 **`compose.mnt.yaml`**，但 `/usr/local/bin/omb-compose` 包装命令只列出了基础与 VM 两个文件。
-此次部署已修正包装命令，明确列出基础、VM 和 `/mnt` 三个文件，并核对更新前后的挂载完全一致。
+当时部署修正包装命令，明确列出基础、VM 和 `/mnt` 三个文件，并核对更新前后的挂载完全一致。2026-10-13 又加入 `compose.rclone.yaml`，使配置目录在后续部署时保留。
 维护包装命令时使它与运行栈一致；不要因执行旧包装命令而无意移除挂载。当前包装命令为：
 
 ```sh
 #!/bin/sh
 set -eu
 cd /opt/OpenMausBot
-exec docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml "$@"
+exec docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml -f compose.rclone.yaml "$@"
 ```
 
 ## 4. Compose 文件的分工
@@ -160,7 +163,7 @@ exec docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml "$@"
 | 现有宿主机网关 | 基础 Compose + 宿主机配置 | 50 使用此方式，**不叠加**域名或 IP HTTPS overlay |
 | 本地桌面能力 | 任一方式 + `compose.vm.yaml` | 启动专用 Docker daemon `dind`；桌面容器按需创建启动 |
 | 应用访问宿主机 `/mnt` | 任一方式 + `compose.mnt.yaml` | 仅在需要时加入，两端已启用 |
-| 应用直接使用 rclone 远端名 | 任一方式 + `compose.rclone.yaml` | 挂现有配置目录到 `/data/.config/rclone`；本机启用，宿主机路径由 `.env` 指定 |
+| 应用读取 rclone 配置 | 任一方式 + `compose.rclone.yaml` | 挂现有配置目录到 `/data/.config/rclone`；两端启用，宿主机路径由 `.env` 指定；执行远端命令还需要 rclone 程序 |
 
 端口写法是 **宿主机地址:宿主机端口:容器端口**。`OMB_HTTP_PORT` 默认 `8080`，`OMB_BIND_ADDRESS` 默认 `127.0.0.1`。
 `OMB_PUBLIC_URL` 控制展示给人的链接、公开地址等信息；它不控制监听地址，也不代替 DNS 或网关配置。
@@ -368,14 +371,14 @@ docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f comp
 SSH 到 `root@108.186.129.50` 后核对 `/opt/OpenMausBot`。源码有本机已不在的临时补丁时，先核对差异，再推进到对应提交；不要强制覆盖。
 如果 root 读已有工作目录触发 Git 的 dubious ownership，先确认仓库的实际归属。对已确认目录可使用单次 `git -c safe.directory=/opt/OpenMausBot ...`；不要把所有路径都设为可信。
 
-50 当前实际栈包含 `/mnt`，使用完整命令：
+50 当前实际栈包含 `/mnt` 和 rclone 配置目录，使用完整命令：
 
 ```sh
 cd /opt/OpenMausBot
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml config --quiet
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml build omb
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml up -d --no-build --remove-orphans
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml ps
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml -f compose.rclone.yaml config --quiet
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml -f compose.rclone.yaml build omb
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml -f compose.rclone.yaml up -d --no-build --remove-orphans
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml -f compose.rclone.yaml ps
 curl --fail http://127.0.0.1:8080/api/health
 curl --fail https://ombus.oomdev.de5.net/api/health
 ```
@@ -391,7 +394,7 @@ curl --fail https://ombus.oomdev.de5.net/api/health
 - 实际运行容器健康，启动后没有持续增加的 `RestartCount`。
 - 容器内 `/app/package.json` 是目标源码版本，同时记录实际镜像 ID／源码 SHA；相同版本号可能对应不同 main 提交。
 - 本机仍包含 Tunnel；50 仍是 loopback 8080 + 宿主机 HTTPS，并保留 `/mnt`。
-- 本机保留 `/mnt` 和 `/data/.config/rclone`，以应用的 UID 1000 核对配置可读／目录可写、`rclone listremotes` 可见两个远端。仅有宿主机 rclone active 不足以证明容器能访问网盘。
+- 两端保留 `/mnt` 和 `/data/.config/rclone`，以应用的 UID 1000 核对配置可读／目录可写、两个网盘目录实际可读。本机有 CLI 时再执行 `rclone listremotes`；50 当前仅核对配置段名，不把配置挂载写成 CLI 已安装。仅有宿主机 rclone active 不足以证明容器能访问网盘。
 - 数据卷与 UID/GID 正确，其他宿主机 Caddy 站点仍存在。
 - 健康接口能经预期公网入口访问。普通部署不再额外验证邮箱登录。
 - 明确记录是哪一台已更新，另一台是否仍在旧版本；不把 Git 已推送等同于容器已更新。
@@ -629,9 +632,22 @@ DuckDB 内存 SQL、resvg PNG、1Password SDK 加载和 WASM 验证均通过；�
 
 按用户要求，此次只新增配置目录挂载。使用 `compose.rclone.yaml` 与 `.env` 中的 `OMB_RCLONE_CONFIG_DIR`，目标是应用默认 HOME 下的 `/data/.config/rclone`。现有 rclone 位于 `/data/.local/bin/rclone`，没有安装或更新 CLI，也没有调整 PATH。
 
-Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` 的 RW/rslave、数据卷、宿主机 8080、Tunnel 与专用 VM daemon 保留。50 继续使用其原有组合和独立账号。
+Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` 的 RW/rslave、数据卷、宿主机 8080、Tunnel 与专用 VM daemon 保留。当时 50 继续使用其原有组合和独立账号；随后加入配置目录挂载，见第 15 节。
 
 验证使用合成配置的隔离容器，以及运行容器中只读的配置段名与 `rclone listremotes`；不在真实云盘复制、同步或删除文件。已用当前应用镜像与合成配置，在无网络的隔离容器中以 UID 1000 验证默认路径发现和配置原子替换；合成目录不含真实账号信息。
 应用容器已通过完整 Compose 组合重新创建，镜像不变，原有数据卷、挂载、端口和两个依赖服务的共享网络保持一致。
 实际运行容器的配置目录可读且可写，`rclone config paths` 指向 `/data/.config/rclone/rclone.conf`，`/data/.local/bin/rclone listremotes` 列出 `gdrive:` 和 `onedrive:`；本机 loopback 与公网健康接口通过，RestartCount 0。
 只列举配置中的远端名，没有发起真实云盘文件复制／同步／删除，也没有重新登录云盘。证据在 `.omb-scratch/rclone-config-20261013/receipt.json` 与 `fixture.log`。
+
+## 15. 50 的 rclone 配置目录挂载（2026-10-13）
+
+检查发现 50 的宿主机已有 `/home/zhipeng/.config/rclone/rclone.conf`，包含 `gdrive`、`onedrive`；配置目录归 UID/GID 1000，目录权限 700、文件权限 600。两个宿主机云盘服务及 `/mnt/googledrive`、`/mnt/onedrive` 正常，应用容器之前没有配置目录，也没有 rclone 程序。
+
+用户选择“仍然只挂配置目录”。已将源码快进到 `149c14858`，设置该主机的 `OMB_RCLONE_CONFIG_DIR`，并在 `/usr/local/bin/omb-compose` 中加入 `compose.rclone.yaml`。使用基础 + VM + mnt + rclone 四份配置执行 `up -d --no-build --pull never --remove-orphans --timeout 60 --wait --wait-timeout 180`，应用与 dind 已正常重建。
+
+新增绑定为 `/home/zhipeng/.config/rclone → /data/.config/rclone`，读写；在应用 UID 1000 下确认目录和配置可读写、配置段名正确、两个网盘目录可读取。未安装 rclone，未修改 PATH，未复制本机云盘账号，未对真实云盘文件执行写入／同步／删除操作。
+
+应用仍运行 0.1.108，镜像 ID 保持 `sha256:d3b5b239f06f7dc1cccb876d473c82f83c8235438ba4fad781b2726127cb3943`。原有数据卷、`/mnt` 的 RW/rslave、loopback 8080、VM socket 均保持一致。应用 healthy，RestartCount 0，dind 连接新应用网络命名空间；本机接口及 `https://ombus.oomdev.de5.net/api/health` 通过。
+
+宿主机 Caddy 配置哈希保持不变，Caddy 与三个 rclone 服务均 active/enabled。未备份用户数据、未创建或保留额外应用镜像；临时 Git bundle 已清理。
+只读核对结果存放在本机 `.omb-scratch/rclone-config-50-20261013/verify.log`，以及 50 的 `.omb-scratch/rclone-config-50-20261013-receipt.json`；这些文件仅记录部署状态，不含凭据或用户文件内容。
