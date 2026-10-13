@@ -16,13 +16,15 @@
 | 上次纳入的上游提交 | `295f947dac548af954d0f792b8631269bb423fd0` |
 | 本次纳入的上游提交 | `a2b2b1b723539c0506766067c6cbd6989c189e12` |
 | 本次源码版本 | `0.1.108` |
+| 本次源码合并提交 | `d7fe6688204be1aba364c57576f835505db14494` |
 
 本次同步纳入 **214 个上游提交**（包括 merge），固定目标为上表完整 SHA。
 采用上游网页 Full Access 的统一 API／界面流程，移除旧的配对管理员专用桥接；保留额外引擎适配、网页流式和其他定制。
 上游完成更多任务运行路径迁移、新增团队批量设置、上下文余量提醒、浏览器登录管理、启动例行任务、Meta／Muse 引擎，并把主要 HTTP 路由拆到 `server/routes/`。
 合并时必须把 fork 补丁迁移到路由的新位置，不能在 `index.ts` 恢复已被拆出的旧处理器。
 
-源码合并、Git 提交、推送和容器发布分别记录。两端最近一次已完成部署仍见第 12 节；本次发布完成后更新第 3 节和第 13 节。
+本次源码合并提交已推送到 `origin/feature/zpmodified`，**本机和 50 均已完成 0.1.108 部署**，见第 3 节和第 13 节。
+随后维护／部署记录的文档提交不改变运行制品；镜像内源码仍指向 `d7fe66882`。第 10—12 节是历史发布快照。
 
 ## 2. 必须保留的定制
 
@@ -68,8 +70,8 @@ CLI 和身份信息保存在容器的持久 HOME `/data`，更新镜像不应把
 | --- | --- | --- |
 | 主机 | 当前开发电脑 | `108.186.129.50` |
 | 源码目录 | `/home/zhipeng/codes/OpenMausBot` | `/opt/OpenMausBot` |
-| 运行制品的源码 HEAD | `5316184f8`，包含本次源码合并 | `5316184f8`，同一份编译制品 |
-| 核对时应用版本 | `0.1.107` | `0.1.107` |
+| 运行制品的源码 HEAD | `d7fe66882` | `d7fe66882`，同一份编译制品 |
+| 核对时应用版本 | `0.1.108` | `0.1.108` |
 | 对外地址 | `https://omb.oomdev.de5.net/` | `https://ombus.oomdev.de5.net/` |
 | Docker 主机端口 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
 | 公网入口 | Cloudflare Tunnel | 宿主机 systemd Caddy |
@@ -522,7 +524,7 @@ docker inspect openmausbot-omb-1 --format '{{.Image}} {{.State.Health.Status}} {
 
 2026-10-12 中断时，代码合并、本机镜像构建和 50 源码快进已经完成，**应用容器尚未切换**。
 2026-10-13 恢复工作后重新核对运行镜像、挂载、源码和归档；两端旧容器仍运行 `22f85d1ac` 的制品。
-随后完成两端更新，当前镜像来源均为 `5316184f8`，运行标签仍是 `openmausbot-vm:local`，发布标签为 `openmausbot-vm:0.1.107-5316184f8`。
+随后完成当次两端更新，当次镜像来源均为 `5316184f8`，运行标签仍是 `openmausbot-vm:local`，发布标签为 `openmausbot-vm:0.1.107-5316184f8`。
 
 | 项目 | 本机 | 50 |
 | --- | --- | --- |
@@ -583,4 +585,33 @@ docker inspect openmausbot-omb-1 --format '{{.Image}} {{.State.Health.Status}} {
 
 未运行完整跨平台 `pnpm test`、真实付费引擎、真实邮箱验证码或真实 1Password 账号。所有创建 Bot、改权限、发送消息和重启恢复场景均使用隔离 HOME／数据目录。
 
-容器发布结果在完成后补充。
+### 本机与 50 发布结果
+
+两端在 2026-10-13 已切换到源码 `d7fe6688204be1aba364c57576f835505db14494`，运行标签仍为 `openmausbot-vm:local`，发布标签为 `openmausbot-vm:0.1.108-d7fe66882`。
+源码合并提交已通过 pre-push 的 lint/typecheck/i18n 检查并推送；50 通过 Git bundle 快进到同一分支，部署说明另作一次文档提交。
+
+| 项目 | 本机 | 50 |
+| --- | --- | --- |
+| 版本 | `0.1.108` | `0.1.108` |
+| 镜像 ID | `sha256:75de7371e8ecc2c745b056f3d4cc8fbd670f9391a71156a4cf0cf1e10238da92` | `sha256:d3b5b239f06f7dc1cccb876d473c82f83c8235438ba4fad781b2726127cb3943` |
+| 服务 | omb + dind + cloudflared | omb + dind |
+| Compose | 基础 + VM + Tunnel + `/mnt` | 基础 + VM + `/mnt` |
+| 宿主机映射 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
+| 公网健康／网页制品 | `https://omb.oomdev.de5.net` 通过 | `https://ombus.oomdev.de5.net` 通过 |
+| 容器状态 | healthy，RestartCount 0 | healthy，RestartCount 0 |
+| VM daemon | `29.8.1`，共享新应用网络命名空间 | 同左 |
+
+此轮继续使用经过验证的编译制品覆盖现有基础运行时的方式构建 Docker 镜像，没有重新从网络安装基础引擎。
+构建上下文来自清空生成目录后的 server/UI 构建和新版 `prepare-duckdb.mjs`，运行镜像清除旧的 `/app/dist-server`、`/app/dist`、`/app/duckdb` 后再复制当前制品。Canonical 多阶段 Dockerfile 的全新网络构建不列为此轮通过项目。
+两端核对 **1169 个制品文件**，聚合 SHA-256 为 `6c297101e8b97e569327b3119cadf044baeb94cc421fa749d7835d0b7c36e4a3`。
+DuckDB 内存 SQL、resvg PNG、1Password SDK 加载和 WASM 验证均通过；最终镜像以临时 HOME、无网络和不挂载生产数据的方式启动检查通过。
+两端公网与 loopback 的首页哈希均为 `501aaf2568b433c15f1dc507f4307cf1e02bc7746fc43496bb17ab010e31a88e`。
+
+本机 Google Drive／OneDrive 目录以应用 UID 1000 实际打开可读，两个宿主机 rclone 服务继续 active/enabled，`/mnt` 的 RW/rslave 绑定和原有数据卷均保留。
+50 的 `/mnt`、默认 loopback 8080、宿主机 Caddy 与 Orca 站点配置保持不变；Caddy 配置哈希为 `7cc1951ff095404a5001850a9977a9ffe5d36bc45fa42f5b4abbe446e0e1e7b9`。
+两端移除 `.env` 中旧的 `OMB_PAIRED_WEB_FULL_ACCESS`，仍保留 `OMB_PRO_PLAN=1`。Full Access 选项现在直接走上游认证 API。
+
+按现有偏好，50 未备份用户数据、未保留旧应用镜像；上传的归档、bundle、校验脚本和临时构建目录在交接结束时删除。本机保留 `openmausbot-vm:before-full-20261013` 供恢复。
+没有执行邮箱登录或生成生产配对码。两端持久 HOME、登录资料和工作数据没有相互复制。
+
+证据包括本机 `local-receipt.json`、50 的 `50-receipt.json`、`native-and-artifacts.json`、`image-smoke.json`、`push.log` 和各检查日志，存放在本节开头的忽略目录。
