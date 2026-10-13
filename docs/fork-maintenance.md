@@ -615,3 +615,10 @@ DuckDB 内存 SQL、resvg PNG、1Password SDK 加载和 WASM 验证均通过；�
 没有执行邮箱登录或生成生产配对码。两端持久 HOME、登录资料和工作数据没有相互复制。
 
 证据包括本机 `local-receipt.json`、50 的 `50-receipt.json`、`native-and-artifacts.json`、`image-smoke.json`、`push.log` 和各检查日志，存放在本节开头的忽略目录。
+
+### 发布后本机健康探测的短暂超时
+
+最终巡检曾看到本机 Docker 健康状态变为 unhealthy。随后同一应用进程和同一容器自行恢复；没有再次重启服务，没有修改 4 秒请求超时，也没有放宽健康判定。
+抓到的探测记录在 09:56:55—09:57:37 UTC 连续超过约 4 秒并失败，09:57:52 UTC 起恢复成功（北京时间分别为 17:56—17:57）。容器 `StartedAt` 一直是 `2026-10-13T09:49:36.151417146Z`，应用 PID 15、宿主机 PID 3750761 未变，RestartCount 仍为 0。
+
+当前日志只包含正常启动信息，没有给出这段延迟的原因；不能把它归因于 Bot 发信号，也不能宣称已修复一个确定的性能问题。后续健康观测记录在 `final-health-observation.json`，正常 loopback／公网接口与网页制品另有发布回执。50 的最终检查一直为 healthy。
