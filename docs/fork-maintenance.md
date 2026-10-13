@@ -76,7 +76,7 @@ CLI 和身份信息保存在容器的持久 HOME `/data`，更新镜像不应把
 | Docker 主机端口 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
 | 公网入口 | Cloudflare Tunnel | 宿主机 systemd Caddy |
 | OMB 容器 | `omb`、`dind`、`cloudflared` | `omb`、`dind` |
-| 运行中的 Compose | `compose.yaml` + `compose.vm.yaml` + `compose.tunnel.yaml` + `compose.mnt.yaml` | `compose.yaml` + `compose.vm.yaml` + `compose.mnt.yaml` |
+| 运行中的 Compose | `compose.yaml` + `compose.vm.yaml` + `compose.tunnel.yaml` + `compose.mnt.yaml` + `compose.rclone.yaml` | `compose.yaml` + `compose.vm.yaml` + `compose.mnt.yaml` |
 | Caddy 容器 | 未启用 | 未启用 |
 | IP 自签 HTTPS overlay | 未启用 | 未启用 |
 
@@ -87,9 +87,10 @@ Tunnel 与应用共享网络命名空间，连接 **`http://127.0.0.1:8799`**，
 Tunnel Token 位于被 Git 忽略的 `.omb-cloudflare/tunnel-token`。不需要把 Token 放进 Compose、文档或命令行。
 直接 HTTP 和 Tunnel 访问同一套本机数据；不同浏览器或不同访问源会有各自的登录状态。
 
-**本机已经使用宿主机网盘挂载，部署命令必须保留 `compose.mnt.yaml`。**
+**本机已经使用宿主机网盘及 rclone 配置挂载，部署命令必须保留 `compose.mnt.yaml` 和 `compose.rclone.yaml`。**
 Google Drive 和 OneDrive 分别由宿主机 `rclone-gdrive.service`、`rclone-onedrive.service` 挂载到 `/mnt/googledrive`、`/mnt/onedrive`；两个服务都已启用开机启动。
 应用容器通过 `/mnt` 的 `rslave` 绑定读取这些目录。网盘 OAuth 配置在宿主机的 rclone 配置中，不在应用镜像内，也不应复制给 50。
+本机 `.env` 设置 `OMB_RCLONE_CONFIG_DIR=/home/zhipeng/.config/rclone`；`compose.rclone.yaml` 把整个目录以读写方式挂到 `/data/.config/rclone`，供已有 `/data/.local/bin/rclone` 直接读取 `gdrive:`／`onedrive:`。配置文件不进入 Git／镜像，目录可写以保存 OAuth 刷新后的原子替换。
 
 ### 50：宿主机 Caddy
 
@@ -158,7 +159,8 @@ exec docker compose -f compose.yaml -f compose.vm.yaml -f compose.mnt.yaml "$@"
 | Caddy 容器的域名 HTTPS | 基础 + `compose.domain.yaml` | 设置 `OMB_DOMAIN`，由可选 Caddy 容器使用 80/443 |
 | 现有宿主机网关 | 基础 Compose + 宿主机配置 | 50 使用此方式，**不叠加**域名或 IP HTTPS overlay |
 | 本地桌面能力 | 任一方式 + `compose.vm.yaml` | 启动专用 Docker daemon `dind`；桌面容器按需创建启动 |
-| 应用访问宿主机 `/mnt` | 任一方式 + `compose.mnt.yaml` | 仅在需要时加入，50 已启用 |
+| 应用访问宿主机 `/mnt` | 任一方式 + `compose.mnt.yaml` | 仅在需要时加入，两端已启用 |
+| 应用直接使用 rclone 远端名 | 任一方式 + `compose.rclone.yaml` | 挂现有配置目录到 `/data/.config/rclone`；本机启用，宿主机路径由 `.env` 指定 |
 
 端口写法是 **宿主机地址:宿主机端口:容器端口**。`OMB_HTTP_PORT` 默认 `8080`，`OMB_BIND_ADDRESS` 默认 `127.0.0.1`。
 `OMB_PUBLIC_URL` 控制展示给人的链接、公开地址等信息；它不控制监听地址，也不代替 DNS 或网关配置。
@@ -336,14 +338,14 @@ git merge-base --is-ancestor <本次上游SHA> HEAD
 
 ### 8.1 本机服务
 
-当前使用基础 + VM + Tunnel + 宿主机 `/mnt`。网盘 overlay 是本机现有功能，构建、更新与检查命令都应包含它：
+当前使用基础 + VM + Tunnel + 宿主机 `/mnt` + rclone 配置目录。网盘 overlay 是本机现有功能，构建、更新与检查命令都应包含它：
 
 ```sh
 cd /home/zhipeng/codes/OpenMausBot
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml config --quiet
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml build omb
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml up -d --no-build --remove-orphans
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml ps
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml -f compose.rclone.yaml config --quiet
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml -f compose.rclone.yaml build omb
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml -f compose.rclone.yaml up -d --no-build --remove-orphans
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml -f compose.rclone.yaml ps
 curl --fail http://127.0.0.1:8080/api/health
 curl --fail https://omb.oomdev.de5.net/api/health
 ```
@@ -356,7 +358,7 @@ curl --fail https://omb.oomdev.de5.net/api/health
 
 ```sh
 docker build -f deploy/local/Dockerfile -t openmausbot-local:latest .
-docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml build omb
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml -f compose.rclone.yaml build omb
 ```
 
 `--pull` 是主动更新基础镜像的选择，不应每次部署都无意切换基础版本。
@@ -389,7 +391,7 @@ curl --fail https://ombus.oomdev.de5.net/api/health
 - 实际运行容器健康，启动后没有持续增加的 `RestartCount`。
 - 容器内 `/app/package.json` 是目标源码版本，同时记录实际镜像 ID／源码 SHA；相同版本号可能对应不同 main 提交。
 - 本机仍包含 Tunnel；50 仍是 loopback 8080 + 宿主机 HTTPS，并保留 `/mnt`。
-- 本机也保留 `/mnt`，以应用的 UID 1000 实际打开 Google Drive／OneDrive 目录确认可读；仅有宿主机 rclone active 不足以证明容器能访问网盘。
+- 本机保留 `/mnt` 和 `/data/.config/rclone`，以应用的 UID 1000 核对配置可读／目录可写、`rclone listremotes` 可见两个远端。仅有宿主机 rclone active 不足以证明容器能访问网盘。
 - 数据卷与 UID/GID 正确，其他宿主机 Caddy 站点仍存在。
 - 健康接口能经预期公网入口访问。普通部署不再额外验证邮箱登录。
 - 明确记录是哪一台已更新，另一台是否仍在旧版本；不把 Git 已推送等同于容器已更新。
@@ -622,3 +624,14 @@ DuckDB 内存 SQL、resvg PNG、1Password SDK 加载和 WASM 验证均通过；�
 抓到的探测记录在 09:56:55—09:57:37 UTC 连续超过约 4 秒并失败，09:57:52 UTC 起恢复成功（北京时间分别为 17:56—17:57）。容器 `StartedAt` 一直是 `2026-10-13T09:49:36.151417146Z`，应用 PID 15、宿主机 PID 3750761 未变，RestartCount 仍为 0。
 
 当前日志只包含正常启动信息，没有给出这段延迟的原因；不能把它归因于 Bot 发信号，也不能宣称已修复一个确定的性能问题。后续健康观测记录在 `final-health-observation.json`，正常 loopback／公网接口与网页制品另有发布回执。50 的最终检查一直为 healthy。
+
+## 14. 本机 rclone 配置目录挂载（2026-10-13）
+
+按用户要求，此次只新增配置目录挂载。使用 `compose.rclone.yaml` 与 `.env` 中的 `OMB_RCLONE_CONFIG_DIR`，目标是应用默认 HOME 下的 `/data/.config/rclone`。现有 rclone 位于 `/data/.local/bin/rclone`，没有安装或更新 CLI，也没有调整 PATH。
+
+Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` 的 RW/rslave、数据卷、宿主机 8080、Tunnel 与专用 VM daemon 保留。50 继续使用其原有组合和独立账号。
+
+验证使用合成配置的隔离容器，以及运行容器中只读的配置段名与 `rclone listremotes`；不在真实云盘复制、同步或删除文件。已用当前应用镜像与合成配置，在无网络的隔离容器中以 UID 1000 验证默认路径发现和配置原子替换；合成目录不含真实账号信息。
+应用容器已通过完整 Compose 组合重新创建，镜像不变，原有数据卷、挂载、端口和两个依赖服务的共享网络保持一致。
+实际运行容器的配置目录可读且可写，`rclone config paths` 指向 `/data/.config/rclone/rclone.conf`，`/data/.local/bin/rclone listremotes` 列出 `gdrive:` 和 `onedrive:`；本机 loopback 与公网健康接口通过，RestartCount 0。
+只列举配置中的远端名，没有发起真实云盘文件复制／同步／删除，也没有重新登录云盘。证据在 `.omb-scratch/rclone-config-20261013/receipt.json` 与 `fixture.log`。

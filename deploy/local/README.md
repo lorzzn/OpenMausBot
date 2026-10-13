@@ -115,6 +115,24 @@ host drives even while the host's rclone services remain healthy. The current
 local and VPS commands are recorded in
 [`docs/fork-maintenance.md`](../../docs/fork-maintenance.md).
 
+### Direct rclone remotes
+
+To share an existing host rclone configuration, set `OMB_RCLONE_CONFIG_DIR`
+to its directory in `.env` and include `compose.rclone.yaml` on every update:
+
+```sh
+docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f compose.mnt.yaml -f compose.rclone.yaml up -d --no-build --pull never --remove-orphans
+```
+
+The directory is mounted read-write at `/data/.config/rclone`, rclone's default
+configuration directory under the application's `/data` HOME. Writable directory
+access allows token refreshes to replace `rclone.conf`; the host directory must
+already exist and be accessible to application UID 1000. Credentials stay on the
+host. This overlay provides configuration; it uses the existing rclone executable.
+For the current local installation it is `/data/.local/bin/rclone`, and
+`/data/.local/bin/rclone listremotes` should list `gdrive:` and `onedrive:`.
+Each installation uses its own cloud accounts and configuration directory.
+
 ## Live calls on a standalone server
 
 Set `OMB_PRO_PLAN=1` in `.env` to enable the upstream Live-call entitlement

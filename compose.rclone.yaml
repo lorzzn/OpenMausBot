@@ -1,0 +1,10 @@
+# Share an existing host rclone config directory with the app's persistent HOME.
+# Directory writes allow OAuth refreshes to atomically replace rclone.conf.
+services:
+  omb:
+    volumes:
+      - type: bind
+        source: ${OMB_RCLONE_CONFIG_DIR:?Set OMB_RCLONE_CONFIG_DIR to an existing host rclone config directory}
+        target: /data/.config/rclone
+        bind:
+          create_host_path: false
