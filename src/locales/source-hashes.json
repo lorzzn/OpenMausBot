@@ -14598,7 +14598,10 @@
       "room.holds.resume": "05f2dae7f5838c7161c94772fc285127afd6de3e26ccbb1b59fb041a8add27cd",
       "room.holds.stop": "300c88bb31db226580ea35a28b2e930ddb05f328b4e6a63601850a6643b882df",
       "room.holds.stopTitle": "839bb3d62635029c1a325673b80f91cb1f16f55ef6179bb37d54f65b634cfa90",
-      "room.holds.avatarHeld": "f11b17aba2842c436d93b02f138b32041eaed0abed7ce03e68e8aefbf671fe73"
+      "room.holds.avatarHeld": "f11b17aba2842c436d93b02f138b32041eaed0abed7ce03e68e8aefbf671fe73",
+      "accounts.authModeLabel": "dac7998fba76f342703faf44d34b0b58a2ed81acc57222d1c2b7aaec9648392c",
+      "accounts.authModeDeviceCode": "f4aa3aecba88b4e567f52a402051a6395bc333f74740c2188f704543fee4dc98",
+      "accounts.authModeChatgptPlan": "17db35179c356ce3afadf948298706043cd11e2bef7d19f5aa4d41db5f6edcbd"
     },
     "zh-tw": {
       "whop.description": "1a07cf04ef17029448d3781415cbac16d54e66b821907a40d94e0e6349710e70",

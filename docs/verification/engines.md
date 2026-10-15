@@ -49,6 +49,32 @@ prove real OAuth login or native Windows execution.
   provider.
 - Model-picker rendering is Electron UI and remains outside this first map.
 
+## ChatGPT account sign-in types
+
+Settings → Model providers → Add another ChatGPT account offers **Codex 设备码登录**
+and **ChatGPT plan**. The selected type is explicit in the creation request;
+neither a failed creation nor a failed sign-in changes it.
+
+```sh
+pnpm exec vitest run server/chatgpt-plan-api.test.ts server/plan-usage.test.ts server/drivers/codex.test.ts server/drivers/codex-device-auth.test.ts src/components/ChatGptPlanSignIn.interaction.test.ts src/components/EnginesSettings.test.ts
+```
+
+The disposable HTTP fixture creates two device-code accounts through an
+authenticated proxy request, holds their synthetic CLI logins independently,
+discovers models, completes one turn per account, signs one out, and restarts
+the server with the other still signed in. The original default Codex login
+must stay untouched. Quota tests assert that each explicit account reads its
+own credential path and does not substitute the default login when missing.
+Existing browser PKCE flow ownership, cancellation, and proxy refusal are also
+covered. Renderer interaction tests check the exact labels, explicit request
+type, and preserving a selection after a failed request.
+
+These checks use a fake CLI, synthetic credentials, and a temporary HOME/data
+directory. They do not verify real OpenAI authorization or real account model
+access. ChatGPT plan retains its browser authorization flow and hosted-app
+approval requirement for remote sign-in; device-code accounts use native
+Codex models and quota.
+
 ## Groq API setup
 
 ```sh

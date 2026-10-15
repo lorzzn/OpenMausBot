@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { CODEX_ACCOUNT_AUTH_MODES } from "../../shared/codex-account.ts";
 import { providerIconError } from "../../shared/provider-icon.ts";
 import {
   assertSeparateClaudeAccount,
@@ -95,8 +97,8 @@ export function createInstanceRoutes(deps: InstanceRouteDeps): RouteHandler {
 
     if (method === "POST" && path === "/api/instances/chatgpt-accounts") {
       if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) return json(res, 415, { error: "content-type must be application/json" });
-      const parsed = createClaudeAccountSchema.pick({ displayName: true }).safeParse(await readBody(req, 8192));
-      if (!parsed.success) return json(res, 400, { error: "Enter an account name (up to 80 characters)." });
+      const parsed = createClaudeAccountSchema.pick({ displayName: true }).extend({ authMode: z.enum(CODEX_ACCOUNT_AUTH_MODES) }).safeParse(await readBody(req, 8192));
+      if (!parsed.success) return json(res, 400, { error: "Enter an account name (up to 80 characters) and choose a sign-in type." });
       if (providerConfigBusy.get()) return json(res, 409, { error: "provider settings are already being updated" });
       providerConfigBusy.set(true);
       try {
@@ -106,7 +108,7 @@ export function createInstanceRoutes(deps: InstanceRouteDeps): RouteHandler {
         const cli = (instances.chatgpt?.config as { cli?: unknown } | undefined)?.cli
           ?? (instances.codex?.config as { cli?: unknown } | undefined)?.cli;
         instances[instanceId] = { driver: "codex", displayName: parsed.data.displayName,
-          config: { authMode: "chatgpt-plan", ...(typeof cli === "string" && cli ? { cli } : {}) } };
+          config: { authMode: parsed.data.authMode, ...(typeof cli === "string" && cli ? { cli } : {}) } };
         await persistProviderInstance(instanceId, instances);
         return json(res, 201, { instanceId, instances: await describeInstances() });
       } finally { providerConfigBusy.set(false); }

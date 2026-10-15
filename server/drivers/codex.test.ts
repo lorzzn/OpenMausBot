@@ -58,6 +58,14 @@ describe("CodexDriver.decodeConfig", () => {
     expect(CodexDriver.decodeConfig({ fullAuto: "yes" }).fullAuto).toBe(false);
   });
 
+  it("requires a known account sign-in mode and rejects mixing either with Company billing", () => {
+    for (const authMode of ["device-code", "chatgpt-plan"] as const) {
+      expect(CodexDriver.decodeConfig({ authMode })).toEqual({ cli: "codex", fullAuto: false, authMode });
+      expect(() => CodexDriver.decodeConfig({ authMode, managed: {} })).toThrow("cannot be combined");
+    }
+    for (const authMode of ["", null, "browser", "auto", 42]) expect(() => CodexDriver.decodeConfig({ authMode })).toThrow("Unknown Codex sign-in mode");
+  });
+
   it("allows Company endpoints over HTTPS, and over HTTP only on loopback", () => {
     expect(CodexDriver.decodeConfig({ managed: { url: "https://company.example/v1", models: ["m"] } }))
       .toMatchObject({ managed: { url: "https://company.example/v1", models: ["m"] } });

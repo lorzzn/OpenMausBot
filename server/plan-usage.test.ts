@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, normalize } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DATA_DIR } from "./config.ts";
 import {
   clearPlanUsageCache,
   fetchPlanUsage,
@@ -419,5 +420,27 @@ describe("plan usage fetcher", () => {
       { id: "cursor", name: "Cursor", driver: "cursor", environment: {} },
       { id: "antigravity", name: "Antigravity", driver: "antigravity", environment: {} },
     ]);
+  });
+
+  it("reads each explicit Codex account's own quota credentials without using the default login", async () => {
+    const accounts = planAccountsFromInstances({
+      "chatgpt-one": { driver: "codex", config: { authMode: "device-code" }, environment: { CODEX_HOME: "/other/account" } },
+      "chatgpt-two": { driver: "codex", config: { authMode: "device-code" } },
+      "chatgpt-plan": { driver: "codex", config: { authMode: "chatgpt-plan" } },
+    });
+    const paths = accounts.map((account) => join(DATA_DIR, "providers", account.id === "chatgpt-plan" ? "chatgpt-plan" : "codex", createHash("sha256").update(account.id).digest("hex"), "codex", "auth.json"));
+    const reads: string[] = [];
+    const credentials = fileCredentialReader({
+      env: { HOME: tmpdir(), CODEX_HOME: "/default/account" },
+      readText: (path) => {
+        reads.push(path);
+        const index = paths.indexOf(path);
+        return index === 0 ? null : index > 0 ? JSON.stringify({ tokens: { access_token: `synthetic-${index}`, account_id: `account-${index}` } }) : JSON.stringify({ tokens: { access_token: "wrong-default-account" } });
+      },
+    });
+    expect(await credentials.read(accounts[0])).toMatchObject({ token: null });
+    expect(await credentials.read(accounts[1])).toMatchObject({ token: "synthetic-1", accountId: "account-1" });
+    expect(await credentials.read(accounts[2])).toMatchObject({ token: "synthetic-2", accountId: "account-2" });
+    expect(reads).toEqual(paths);
   });
 });

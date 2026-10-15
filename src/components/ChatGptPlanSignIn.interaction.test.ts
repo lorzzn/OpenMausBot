@@ -80,7 +80,7 @@ it("cancels the same flow and never opens an untrusted authorization URL", async
 it.each([undefined, "google-original"])("adds a named account, then hands its id back so its sign-in can start (%s)", async (antigravityInstanceId) => {
   const accounts = [{ instanceId: "chatgpt-second", displayName: "Work" }];
   const onAdded = vi.fn();
-  const props = { label: "Add", endpoint: `/api/instances/${antigravityInstanceId ? "antigravity" : "chatgpt"}-accounts`, onAdded,
+  const props = { label: "Add", endpoint: `/api/instances/${antigravityInstanceId ? "antigravity" : "chatgpt"}-accounts`, onAdded, chatgpt: !antigravityInstanceId,
     ...(antigravityInstanceId ? { extra: { sourceInstanceId: antigravityInstanceId } } : {}) };
   fixture.api.mockResolvedValueOnce({ instanceId: "chatgpt-second", instances: accounts });
   fixture.index = 0;
@@ -92,9 +92,29 @@ it.each([undefined, "google-original"])("adds a named account, then hands its id
   const form = nodes(AddAccount(props)).find((node) => node.type === "form") as ReactElement<{ onSubmit: (event: { preventDefault: () => void }) => void }>;
   form.props.onSubmit({ preventDefault: () => {} });
   await flush();
-  expect(fixture.api).toHaveBeenCalledWith(`/api/instances/${antigravityInstanceId ? "antigravity" : "chatgpt"}-accounts`, { method: "POST", body: JSON.stringify({ displayName: "Work", ...(antigravityInstanceId ? { sourceInstanceId: antigravityInstanceId } : {}) }) });
+  expect(fixture.api).toHaveBeenCalledWith(`/api/instances/${antigravityInstanceId ? "antigravity" : "chatgpt"}-accounts`, { method: "POST", body: JSON.stringify({ displayName: "Work", ...(antigravityInstanceId ? { sourceInstanceId: antigravityInstanceId } : { authMode: "device-code" }) }) });
   expect(fixture.api).toHaveBeenCalledOnce();
   expect(fixture.dispatch).toHaveBeenCalledWith({ type: "instances", instances: accounts });
   expect(onAdded).toHaveBeenCalledWith("chatgpt-second");
   expect(fixture.openExternal).not.toHaveBeenCalled();
+});
+
+it.each(["device-code", "chatgpt-plan"])("submits the selected account type without changing it after a failure (%s)", async (mode) => {
+  const props = { label: "Add", endpoint: "/api/instances/chatgpt-accounts", chatgpt: true, onAdded: vi.fn() };
+  const draw = () => { fixture.index = 0; return nodes(AddAccount(props)); };
+  draw().find((node) => node.type === "button")!.props.onClick!();
+  const input = draw().find((node) => node.type === "input") as ReactElement<{ onChange: (event: { target: { value: string } }) => void }>;
+  input.props.onChange({ target: { value: " Work " } });
+  const select = draw().find((node) => node.type === "select") as ReactElement<{ value: string; onChange: (event: { target: { value: string } }) => void }>;
+  expect(select.props.value).toBe("device-code");
+  expect(draw().filter((node) => node.type === "option").map((node) => node.props.children)).toEqual(["Codex 设备码登录", "ChatGPT plan"]);
+  select.props.onChange({ target: { value: mode } });
+  fixture.api.mockRejectedValueOnce(new Error("Sign-in refused"));
+  const form = draw().find((node) => node.type === "form") as ReactElement<{ onSubmit: (event: { preventDefault: () => void }) => void }>;
+  form.props.onSubmit({ preventDefault: () => {} });
+  await flush();
+  expect(fixture.api).toHaveBeenCalledExactlyOnceWith(props.endpoint, { method: "POST", body: JSON.stringify({ displayName: "Work", authMode: mode }) });
+  expect(draw().find((node) => node.type === "select")!.props).toMatchObject({ value: mode });
+  expect(draw().find((node) => node.props.children === "Sign-in refused")).toBeDefined();
+  expect(props.onAdded).not.toHaveBeenCalled();
 });

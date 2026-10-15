@@ -4,6 +4,7 @@ import { api, useStore, type InstanceInfo } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import type { LocaleKey } from "@/locales";
+import { CODEX_ACCOUNT_AUTH_MODES, isCodexAccountAuthMode, type CodexAccountAuthMode } from "../../shared/codex-account";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ClaudeSignIn } from "./ClaudeSignIn";
 import { DeviceSignIn, deviceSignInProvider } from "./DeviceSignIn";
@@ -243,17 +244,19 @@ function AccountRow({ group, instance, signingIn, onSignIn, onSignInDone }: {
 }
 
 /** Names a new account and hands its id back, so the caller can start its sign-in at once. */
-export function AddAccount({ label, endpoint, extra, folder: offerFolder = false, onAdded }: {
+export function AddAccount({ label, endpoint, extra, folder: offerFolder = false, chatgpt = false, onAdded }: {
   label: string;
   endpoint: string;
   extra?: Record<string, unknown>;
   folder?: boolean;
+  chatgpt?: boolean;
   onAdded: (instanceId: string) => void;
 }) {
   const { dispatch } = useStore();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [folder, setFolder] = useState("");
+  const [authMode, setAuthMode] = useState<CodexAccountAuthMode>("device-code");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -262,12 +265,13 @@ export function AddAccount({ label, endpoint, extra, folder: offerFolder = false
     setSaving(true);
     setError(null);
     try {
-      const body = { displayName: name.trim(), ...extra, ...(offerFolder && folder.trim() ? { configDir: folder.trim() } : {}) };
+      const body = { displayName: name.trim(), ...extra, ...(chatgpt ? { authMode } : {}), ...(offerFolder && folder.trim() ? { configDir: folder.trim() } : {}) };
       const created = await api(endpoint, { method: "POST", body: JSON.stringify(body) });
       if (Array.isArray(created.instances)) dispatch({ type: "instances", instances: created.instances });
       setOpen(false);
       setName("");
       setFolder("");
+      setAuthMode("device-code");
       if (typeof created.instanceId === "string") onAdded(created.instanceId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -290,6 +294,15 @@ export function AddAccount({ label, endpoint, extra, folder: offerFolder = false
         <input value={name} onChange={(event) => setName(event.target.value)} placeholder={t("accounts.namePlaceholder")} maxLength={80} autoFocus required disabled={saving}
           className="rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] font-normal text-ink outline-none focus:border-accent-border disabled:opacity-50" />
       </label>
+      {chatgpt && (
+        <label className="flex flex-col gap-1 text-[12px] font-medium text-ink">
+          {t("accounts.authModeLabel")}
+          <select value={authMode} onChange={(event) => { if (isCodexAccountAuthMode(event.target.value)) setAuthMode(event.target.value); }} disabled={saving}
+            className="rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] font-normal text-ink outline-none focus:border-accent-border disabled:opacity-50">
+            {CODEX_ACCOUNT_AUTH_MODES.map((mode) => <option key={mode} value={mode}>{t(mode === "device-code" ? "accounts.authModeDeviceCode" : "accounts.authModeChatgptPlan")}</option>)}
+          </select>
+        </label>
+      )}
       {offerFolder && (
         <details className="text-[12px] text-ink-secondary">
           <summary className="cursor-pointer select-none hover:text-ink">{t("accounts.folderToggle")}</summary>
@@ -331,7 +344,7 @@ export function AccountsCard({ group, accounts, advanced }: { group: AccountGrou
                 onSignInDone={() => setSigningIn((current) => current === instance.instanceId ? null : current)} />
             ))}
           </ul>
-          {!primary.snapshot.authenticationUnavailableReason && <AddAccount label={t(COPY[group].add)} endpoint={`/api/instances/${group}-accounts`} folder={group === "claude"} onAdded={setSigningIn} />}
+          {!primary.snapshot.authenticationUnavailableReason && <AddAccount label={t(COPY[group].add)} endpoint={`/api/instances/${group}-accounts`} folder={group === "claude"} chatgpt={group === "chatgpt"} onAdded={setSigningIn} />}
         </div>
       )}
       {primary.snapshot.update && <EngineUpdateNotice update={primary.snapshot.update} instance={primary} className="mt-3" quiet />}

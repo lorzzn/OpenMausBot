@@ -3,11 +3,13 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import type { InstanceConfigMap } from "./contracts.ts";
 import { resolveClaudeConfigDir } from "./drivers/claude.ts";
 import { codexHome } from "./drivers/codex-identity.ts";
 import { antigravityProfileDirectory } from "./drivers/antigravity-acp.ts";
 import { harnessHome, userHome } from "./env-path.ts";
+import { PRODUCT_NAME } from "./plan-usage-accounts.ts";
+
+export { planAccountsFromInstances } from "./plan-usage-accounts.ts";
 
 export type PlanDriver = "claude" | "codex" | "grok" | "cursor" | "antigravity";
 
@@ -131,40 +133,6 @@ const WEEK_MIN_SECONDS = 5 * 86400;
 const WEEK_MAX_SECONDS = 9 * 86400;
 const MONTH_MIN_SECONDS = 27 * 86400;
 const MONTH_MAX_SECONDS = 32 * 86400;
-
-const DRIVER_OF: Record<string, PlanDriver> = {
-  claudeAgent: "claude",
-  codex: "codex",
-  grokAgent: "grok",
-  cursorAgent: "cursor",
-  antigravityAgent: "antigravity",
-};
-
-const PRODUCT_NAME: Record<PlanDriver, string> = {
-  claude: "Claude",
-  codex: "Codex",
-  grok: "Grok",
-  cursor: "Cursor",
-  antigravity: "Antigravity",
-};
-
-export function planAccountsFromInstances(instances: InstanceConfigMap): PlanAccount[] {
-  const accounts: PlanAccount[] = [];
-  for (const [id, entry] of Object.entries(instances)) {
-    const driver = DRIVER_OF[entry.driver];
-    if (!driver) continue;
-    const config = asRecord(entry.config);
-    const configDir = typeof config?.configDir === "string" ? config.configDir : undefined;
-    accounts.push({
-      id,
-      name: entry.displayName?.trim() || PRODUCT_NAME[driver],
-      driver,
-      environment: { ...entry.environment },
-      ...(configDir ? { configDir } : {}),
-    });
-  }
-  return accounts;
-}
 
 export function parseClaudeUsage(body: unknown): PlanWindows {
   const root = claudeRoot(body);

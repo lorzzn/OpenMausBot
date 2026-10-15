@@ -719,3 +719,23 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 - 两端没有互相复制用户数据或账号，没有发送邮箱验证码、生成生产配对码或执行真实付费引擎请求。最终部署记录只证明本节列出的健康、制品、入口、挂载及 VM 连接。
 
 主要证据是 `local-receipt.json`、`50-receipt.json`、`native-and-artifacts.json`、`image-smoke.json`、`packaged.log`、`stream-ui.log`、`push.log` 和各部署日志，位于本节开头的忽略目录。50 仅保留不含凭据或用户内容的 `.omb-scratch/deployment-receipt.json` 运维回执。
+
+## 17. 新增 ChatGPT 账号时选择认证类型
+
+本节记录第 16 节发布之后的源码改动；不代表已更新本机或 50 的运行容器。
+
+上游已支持 ChatGPT plan 多账号和 Codex 设备码登录；本次接通的是“添加另一个 ChatGPT 账号”表单中的类型选择。
+
+| 表单文案 | 保存的 `config.authMode` | 认证与运行 |
+| --- | --- | --- |
+| Codex 设备码登录 | `device-code` | 默认选项；复用原生 Codex 设备码组件，可通过远程管理页面启动登录；模型与套餐用量按 Codex 账号读取 |
+| ChatGPT plan | `chatgpt-plan` | 保留上游浏览器 PKCE／计划令牌流程；代理／非 loopback 请求不能启动此浏览器授权，托管登录仍需 OpenAI 批准 |
+
+- `POST /api/instances/chatgpt-accounts` 现在要求显式提交 `displayName` 和 `authMode`。缺失或未知类型、额外的环境注入字段返回 400，不自动尝试另一种认证。
+- 新设备码账号沿用 `chatgpt-<UUID>` 实例 ID，继续使用既有账号列表、模型选择、重命名、退出和删除流程。每个账号的 `CODEX_HOME` 位于 `<DATA_DIR>/providers/codex/<sha256(instanceId)>/codex`，创建实例时即建立目录。
+- ChatGPT plan 的既有目录 `<DATA_DIR>/providers/chatgpt-plan/<sha256(instanceId)>` 保持原位置。没有设置 `authMode` 的原生 Codex 实例仍使用原配置。
+- `server/drivers/codex-account.ts` 统一提供显式账号的目录，驱动的登录／模型／对话／退出与套餐用量读取使用同一目录。某账号缺少凭据时，不读取默认 Codex 账号来替代。
+- 这些目录位于已有备份排除的 `providers/` 中；不上传、迁移或互相复制真实凭据。独立账号目录不会扩大 Codex 或 ChatGPT plan 的模型授权范围。
+- 配置解码与套餐账号列表构造分别抽出到 `codex-config.ts`、`plan-usage-accounts.ts`，大文件行数上限只下调。
+
+验证方法见 [引擎认证检查](verification/engines.md#chatgpt-account-sign-in-types)。测试仅使用临时服务和模拟 CLI；真实 OpenAI 登录及生产容器部署不在本次验证范围内。

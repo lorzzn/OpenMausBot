@@ -1,6 +1,6 @@
 // Real HTTP server, disposable home, fake CLI; OAuth stops before its callback.
 import { spawn, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ import { freePortBlock } from "./testing/ports.ts";
 import { excludedWorkspaceAuthPath } from "./workspace-backup-policy.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const FAKE_CODEX = join(ROOT, "server/testing/fake-codex-app-server.ts");
+const FAKE_CODEX = join(ROOT, "server/testing/fake-codex-accounts.ts");
 let child: ChildProcess | undefined;
 let home: string;
 let base: string;
@@ -47,17 +47,7 @@ function expectSignedOut(instance: Record<string, any>) {
   expect(JSON.stringify(instance)).not.toMatch(/access_token|refresh_token|id_token|code_verifier|credentials\.json/);
 }
 
-beforeAll(async () => {
-  home = mkdtempSync(join(tmpdir(), "omb-chatgpt-api-"));
-  mkdirSync(join(home, "tmp"));
-  const port = await freePortBlock([0, 1]);
-  base = `http://127.0.0.1:${port}`;
-  logPath = join(tmpdir(), `omb-chatgpt-api-${port}-${process.pid}.log`);
-  // Non-product instance names avoid adding unrelated native CLIs to this fixture.
-  writeFileSync(join(home, "config.json"), JSON.stringify({ instances: {
-    fixture: { driver: "claudeAgent", config: { cli: join(ROOT, "server/testing/fake-claude-cli.ts") } },
-    chatgpt: { driver: "codex", displayName: "ChatGPT plan", config: { authMode: "chatgpt-plan", cli: FAKE_CODEX } },
-  } }));
+async function launch(port: number) {
   const log = openSync(logPath, "a", 0o600);
   try {
     child = spawn(process.execPath, ["--experimental-strip-types", join(ROOT, "server/index.ts")], {
@@ -70,6 +60,19 @@ beforeAll(async () => {
     expect(health.status).toBe(200);
     expect((await health.json() as { pid: number }).pid).toBe(child!.pid);
   }, { timeout: 20_000, interval: 100 });
+}
+
+beforeAll(async () => {
+  home = mkdtempSync(join(tmpdir(), "omb-chatgpt-api-"));
+  mkdirSync(join(home, "tmp"));
+  const port = await freePortBlock([0, 1]);
+  base = `http://127.0.0.1:${port}`;
+  logPath = join(tmpdir(), `omb-chatgpt-api-${port}-${process.pid}.log`);
+  writeFileSync(join(home, "config.json"), JSON.stringify({ instances: {
+    fixture: { driver: "claudeAgent", config: { cli: join(ROOT, "server/testing/fake-claude-cli.ts") } },
+    chatgpt: { driver: "codex", displayName: "ChatGPT plan", config: { authMode: "chatgpt-plan", cli: FAKE_CODEX } },
+  } }));
+  await launch(port);
 }, 30_000);
 
 afterAll(async () => {
@@ -87,8 +90,9 @@ describe("ChatGPT plan accounts over isolated HTTP", () => {
     expect(list.status).toBe(200);
     expectSignedOut(list.body.instances.find((instance: { instanceId: string }) => instance.instanceId === "chatgpt"));
     const saved = readFileSync(join(home, "config.json"), "utf8");
-    for (const body of [{}, { displayName: " " }, { displayName: "x".repeat(81) }, { displayName: "Bad\nName" },
-      { displayName: 42 }, { displayName: "Injected", environment: { OPENAI_API_KEY: "synthetic-injection" } }]) {
+    for (const body of [{}, { displayName: "Missing mode" }, { displayName: "Wrong mode", authMode: "browser" },
+      ...[" ", "x".repeat(81), "Bad\nName", 42].map(displayName => ({ displayName, authMode: "device-code" })),
+      { displayName: "Injected", authMode: "device-code", environment: { OPENAI_API_KEY: "synthetic-injection" } }]) {
       expect((await api("POST", "/api/instances/chatgpt-accounts", body)).status).toBe(400);
     }
     expect((await api("POST", "/api/instances/chatgpt-accounts", { displayName: "Wrong type" }, { "content-type": "text/plain" })).status).toBe(415);
@@ -98,7 +102,7 @@ describe("ChatGPT plan accounts over isolated HTTP", () => {
   it("keeps account entries and locally generated sign-in flows separate and owned by their admin sessions", async () => {
     const ids: string[] = [];
     for (const displayName of ["  Personal plan  ", "Work plan"]) {
-      const created = await api("POST", "/api/instances/chatgpt-accounts", { displayName });
+      const created = await api("POST", "/api/instances/chatgpt-accounts", { displayName, authMode: "chatgpt-plan" });
       expect(created.status, JSON.stringify(created.body)).toBe(201);
       ids.push(created.body.instanceId);
       const instance = created.body.instances.find((row: { instanceId: string }) => row.instanceId === created.body.instanceId);
@@ -162,7 +166,7 @@ describe("ChatGPT plan accounts over isolated HTTP", () => {
   });
 
   it("renames and removes an added account, but never the built-in one", async () => {
-    const created = await api("POST", "/api/instances/chatgpt-accounts", { displayName: "Side plan" });
+    const created = await api("POST", "/api/instances/chatgpt-accounts", { displayName: "Side plan", authMode: "chatgpt-plan" });
     expect(created.status).toBe(201);
     const id = created.body.instanceId as string;
     const renamed = await api("PATCH", `/api/instances/${id}`, { displayName: "Client plan" });
@@ -176,4 +180,59 @@ describe("ChatGPT plan accounts over isolated HTTP", () => {
     expect(JSON.parse(readFileSync(join(home, "config.json"), "utf8")).instances).not.toHaveProperty(id);
     expect(JSON.parse(readFileSync(join(home, "config.json"), "utf8")).instances).toHaveProperty("chatgpt");
   });
+
+  it("signs in two native Codex accounts remotely, runs with their own homes, and keeps the other login after sign-out and restart", async () => {
+    mkdirSync(join(home, ".codex"));
+    const original = JSON.stringify({ auth_mode: "chatgpt", tokens: { access_token: "synthetic-default" } });
+    writeFileSync(join(home, ".codex/auth.json"), original);
+    const owner = { ...await admin("Remote device browser"), "x-forwarded-proto": "https", "x-forwarded-host": "fixture.example.test" };
+    const accounts: Array<{ id: string; home: string; flowId: string; email: string }> = [];
+    for (const [index, displayName] of ["Personal Codex", "Work Codex"].entries()) {
+      const created = await api("POST", "/api/instances/chatgpt-accounts", { displayName, authMode: "device-code" }, owner);
+      expect(created.status, JSON.stringify(created.body)).toBe(201);
+      const id = created.body.instanceId as string;
+      const row = created.body.instances.find((instance: any) => instance.instanceId === id);
+      expect(row).toMatchObject({ authentication: { method: "device-code" }, snapshot: { authenticated: false } });
+      expect(row.snapshot.chatgptPlan).not.toBe(true);
+      const started = await api("POST", `/api/instances/${id}/auth/start`, {}, owner);
+      expect(started.status, JSON.stringify(started.body)).toBe(200);
+      expect(started.body.auth).toMatchObject({ phase: "waiting", authorizationUrl: "https://auth.openai.com/codex/device", userCode: "0CSG-0IXIM" });
+      accounts.push({ id, home: join(home, "providers/codex", createHash("sha256").update(id).digest("hex"), "codex"), flowId: started.body.auth.flowId, email: `account-${index}@example.test` });
+    }
+    expect(accounts[0].home).not.toBe(accounts[1].home);
+    const status = async (index: number) => (await api("GET", `/api/instances/${accounts[index].id}/auth/status?flowId=${accounts[index].flowId}`, undefined, owner)).body.auth;
+    for (const [index, account] of accounts.entries()) {
+      writeFileSync(join(account.home, "approve-login.json"), JSON.stringify({ token: `synthetic-account-${index}`, email: account.email }));
+      await expect.poll(async () => (await status(index)).phase, { timeout: 15_000 }).toBe("succeeded");
+      if (index === 0) expect((await status(1)).phase).toBe("waiting");
+      const refreshed = await api("POST", `/api/instances/${account.id}/refresh-models`, {}, owner);
+      expect(refreshed.status, JSON.stringify(refreshed.body)).toBe(200);
+      const instance = refreshed.body.instances.find((row: any) => row.instanceId === account.id);
+      expect(instance.snapshot).toMatchObject({ authenticated: true, account: { email: account.email } });
+      const created = await api("POST", "/api/bots", { name: account.email, modelSelection: { instanceId: account.id, model: instance.models.default }, requireAvailableModel: true });
+      expect(created.status, JSON.stringify(created.body)).toBe(201);
+      const bot = created.body.bot;
+      const sent = await api("POST", `/api/bots/${bot.id}/messages`, { text: "Reply from this fixture account.", threadId: bot.activeTaskId });
+      expect(sent.status, JSON.stringify(sent.body)).toBe(202);
+      await expect.poll(async () => readdirSync(account.home).filter(name => /^rpc-.*\.json$/.test(name)).map(name => JSON.parse(readFileSync(join(account.home, name), "utf8")))
+        .some(rpc => rpc.env.CODEX_HOME === account.home && rpc.calls.some((call: any) => call.method === "turn/start")), { timeout: 20_000 }).toBe(true);
+      await expect.poll(async () => (await api("GET", `/api/threads/${sent.body.threadId}/messages`)).body.messages
+        .some((message: any) => message.role === "bot" && message.kind === "text" && message.text === "done from fake codex"), { timeout: 20_000 }).toBe(true);
+    }
+    const signedOut = await api("POST", `/api/instances/${accounts[0].id}/auth/sign-out`, {}, owner);
+    expect(signedOut.status, JSON.stringify(signedOut.body)).toBe(200);
+    expect(existsSync(join(accounts[0].home, "auth.json"))).toBe(false);
+    expect(existsSync(join(accounts[1].home, "auth.json"))).toBe(true);
+    await waitForExit(child, { signal: "SIGTERM" });
+    await launch(Number(new URL(base).port));
+    const list = await api("GET", "/api/instances");
+    expect(list.body.instances.find((row: any) => row.instanceId === accounts[0].id).snapshot.authenticated).toBe(false);
+    expect(list.body.instances.find((row: any) => row.instanceId === accounts[1].id).snapshot).toMatchObject({ authenticated: true, account: { email: accounts[1].email } });
+    expect(readFileSync(join(home, ".codex/auth.json"), "utf8")).toBe(original);
+    const saved = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
+    for (const account of accounts) {
+      expect(saved.instances[account.id].config).toEqual({ authMode: "device-code", cli: FAKE_CODEX });
+      expect(saved.instances[account.id]).not.toHaveProperty("environment");
+    }
+  }, 60_000);
 });
