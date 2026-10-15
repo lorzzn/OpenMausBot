@@ -177,6 +177,7 @@ interface AcpSession {
 
 /** Per-CLI specifics plugged into the shared ACP runtime. */
 export interface AcpSupport {
+  clientCapabilities?: Record<string, unknown>;
   questionRequests?: Readonly<Record<string, AcpQuestionRequest>>;
   /** Verified native catalog parameters, applied before both new and restored sessions. */
   toolScopeSessionParams?(turn: SendTurnInput, initializeResult: unknown, hasMcp: boolean,
@@ -315,9 +316,7 @@ export interface AcpSupport {
     env: Record<string, string | undefined>;
     config: AcpConfig;
     turn: SendTurnInput;
-    /** The session's advertised models, verbatim: some CLIs name ACP model ids differently from
-     * their argv slugs (Cursor answers `default[]` for the CLI's `auto`). */
-    sessionModels: Array<{ modelId?: string; name?: string }>;
+    modelLabel?: string;
     /** Last model acknowledged by session/new/load/set_model, preserved for pooled turns. */
     currentModelId?: string;
     /** Tell the person the session runs another model than the one picked. */
@@ -1488,6 +1487,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                     protocolVersion: 1,
                     clientInfo: { name: "openmausbot", version: "0.0.0" },
                     clientCapabilities: {
+                      ...support.clientCapabilities,
                       fs: {
                         readTextFile: support.clientFileSystem === true,
                         writeTextFile: support.clientFileSystem === true,
@@ -1672,9 +1672,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                   env: spawnEnv,
                   config: turnConfig,
                   turn: cliTurn,
-                  sessionModels: Array.isArray(session.sessionConfigResult?.models?.availableModels)
-                    ? session.sessionConfigResult.models.availableModels
-                    : [],
+                  modelLabel: models.options.find((option) => option.id === cliTurn.model)?.label,
                   currentModelId: session.sessionConfigResult?.models?.currentModelId,
                   notice: (message) => {
                     if (session.fallbackNotice === message) return;
@@ -1929,6 +1927,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             pickAuthMethod: (methods) => support.pickAuthMethod(methods, spawnEnv),
             authRequired: support.authFailure === "fail-request" ? "if-requested" : support.authFailure === "fail",
             loginNote: support.loginNote,
+            clientCapabilities: support.clientCapabilities,
             ...(support.configureSession ? {
               configure: ({ request, sessionId, session }) => support.configureSession!({
                 request,
@@ -1936,7 +1935,6 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 env: spawnEnv,
                 config: turnConfig,
                 turn,
-                sessionModels: Array.isArray(session?.models?.availableModels) ? session.models.availableModels : [],
                 currentModelId: session?.models?.currentModelId,
                 notice: () => undefined,
               }),

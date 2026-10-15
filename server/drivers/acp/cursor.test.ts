@@ -15,9 +15,7 @@ import {
   decodeCursorAuthText,
   decodeCursorModelCatalog,
   decodeCursorModelText,
-  matchCursorAcpModel,
   STATIC_CURSOR_MODELS,
-  resolveCursorAcpModelId,
 } from "./cursor.ts";
 
 const FAKE_CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "testing", "fake-acp-cli.ts");
@@ -34,6 +32,86 @@ describe("decodeCursorAuthStatus", () => {
     expect(decodeCursorAuthStatus({ auth: { isAuthenticated: true } })).toBe(true);
     expect(decodeCursorAuthStatus({ email: "user@example.com" })).toBeNull();
     expect(decodeCursorAuthStatus("logged in")).toBeNull();
+  });
+});
+
+describe("Cursor parameterized model sessions", () => {
+  const scratchDirs: string[] = [];
+  afterEach(async () => {
+    delete process.env.FAKE_ACP_DUMP;
+    delete process.env.FAKE_ACP_CURSOR_REJECT;
+    delete process.env.FAKE_ACP_RPC_DUMP;
+    for (const dir of scratchDirs.splice(0)) await removeTempDir(dir);
+  });
+
+  const fixture = async () => {
+    ensureDirs();
+    chmodSync(FAKE_CLI, 0o755);
+    const scratch = mkdtempSync(join(tmpdir(), "omb-cursor-params-"));
+    scratchDirs.push(scratch);
+    const dump = join(scratch, "dump.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    process.env.FAKE_ACP_RPC_DUMP = join(scratch, "rpc.json");
+    const instance = await CursorAgentDriver.create({
+      instanceId: "cursor-params", displayName: "Cursor", enabled: true,
+      environment: {}, config: { cli: FAKE_CLI, fullAuto: false },
+    });
+    return { instance, dump, recorder: recordEvents(instance.adapter) };
+  };
+
+  it("changes High Fast to High and Medium within one process, without model replacement or read-back calls", async () => {
+    const { instance, dump, recorder } = await fixture();
+    try {
+      for (const model of ["grok-4.7-high-fast", "grok-4.7-high", "grok-4.7-medium"]) {
+        const turn = await instance.adapter.sendTurn({ threadId: "params", model, text: model });
+        expect(await recorder.until((event) => event.type === "turn.completed" && event.turnId === turn.turnId)).toMatchObject({ ok: true });
+      }
+      const prompts = readFileSync(`${dump}.prompts.jsonl`, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      expect(new Set(prompts.map((prompt) => prompt.pid)).size).toBe(1);
+      expect(prompts.map(({ model, parameters }) => ({ model, parameters }))).toEqual([
+        { model: "grok-4.7", parameters: { context: "256k", reasoning_effort: "high", fast: "true" } },
+        { model: "grok-4.7", parameters: { context: "256k", reasoning_effort: "high", fast: "false" } },
+        { model: "grok-4.7", parameters: { context: "256k", reasoning_effort: "medium", fast: "false" } },
+      ]);
+      expect(recorder.events.filter((event) => event.type === "runtime.notice")).toEqual([]);
+      const methods: string[] = JSON.parse(readFileSync(process.env.FAKE_ACP_RPC_DUMP!, "utf8"));
+      expect(methods).not.toContain("session/set_model");
+      expect(methods.slice(methods.indexOf("cursor/list_available_models"))).toEqual(Array(3).fill([
+        "cursor/list_available_models", ...Array(4).fill("session/set_config_option"), "session/prompt", "session/prompt.result",
+      ]).flat());
+    } finally {
+      recorder.stop();
+      await instance.dispose();
+    }
+  });
+
+  it("selects Auto by its native base id", async () => {
+    const { instance, dump, recorder } = await fixture();
+    try {
+      await instance.adapter.sendTurn({ threadId: "params-auto", model: "auto", text: "hi" });
+      expect(await recorder.until((event) => event.type === "turn.completed")).toMatchObject({ ok: true });
+      expect(JSON.parse(readFileSync(`${dump}.config.json`, "utf8"))).toEqual([
+        { method: "session/set_config_option", params: { sessionId: "fake-acp-session", configId: "model", value: "default" } },
+      ]);
+    } finally {
+      recorder.stop();
+      await instance.dispose();
+    }
+  });
+
+  it("fails before prompting when Fast is rejected", async () => {
+    process.env.FAKE_ACP_CURSOR_REJECT = "fast";
+    const { instance, dump, recorder } = await fixture();
+    try {
+      await instance.adapter.sendTurn({ threadId: "params-rejected", model: "grok-4.7-high", text: "hi" });
+      expect(await recorder.until((event) => event.type === "turn.completed")).toMatchObject({ ok: false });
+      expect(recorder.events).toContainEqual(expect.objectContaining({ type: "runtime.error", message: expect.stringContaining("Invalid config option fast") }));
+      expect(existsSync(`${dump}.prompts.jsonl`)).toBe(false);
+      expect(recorder.events.filter((event) => event.type === "runtime.notice")).toEqual([]);
+    } finally {
+      recorder.stop();
+      await instance.dispose();
+    }
   });
 });
 
@@ -222,7 +300,7 @@ describe("CursorAgentDriver", () => {
     }
   });
 
-  it("spawns `agent [--force] [--model …] acp` and keeps Cursor credentials", async () => {
+  it("spawns `agent [--force] acp` and keeps Cursor credentials", async () => {
     ensureDirs();
     chmodSync(FAKE_CLI, 0o755);
     const scratch = mkdtempSync(join(tmpdir(), "omb-cursor-"));
@@ -245,14 +323,17 @@ describe("CursorAgentDriver", () => {
       await recorder.until((e) => e.type === "turn.completed");
 
       const seen = JSON.parse(readFileSync(dump, "utf8"));
-      expect(seen.argv).toEqual(["--force", "--model", "gpt-5.3-codex", "acp"]);
+      expect(seen.argv).toEqual(["--force", "acp"]);
       expect(seen.env.CURSOR_API_KEY).toBe("cursor-should-keep");
       expect(seen.env.XAI_API_KEY).toBeUndefined();
 
       const applied = JSON.parse(readFileSync(`${dump}.config.json`, "utf8"));
       expect(applied).toEqual([
-        { method: "session/set_model", params: { sessionId: "fake-acp-session", modelId: "gpt-5.3-codex" } },
+        { method: "session/set_config_option", params: { sessionId: "fake-acp-session", configId: "model", value: "gpt-5.3-codex" } },
+        { method: "session/set_config_option", params: { sessionId: "fake-acp-session", configId: "reasoning", value: "medium" } },
+        { method: "session/set_config_option", params: { sessionId: "fake-acp-session", configId: "fast", value: "false" } },
       ]);
+      expect(JSON.parse(readFileSync(`${dump}.initialize.json`, "utf8")).clientCapabilities._meta).toEqual({ parameterizedModelPicker: true });
       for (const approvalMode of ["auto", "ask"] as const) {
         const { turnId } = await instance.adapter.sendTurn({ threadId: "t-cursor", text: "continue", approvalMode, resumeCursor: "fake-acp-session" });
         await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
@@ -473,7 +554,7 @@ describe("CursorAgentDriver", () => {
     });
   });
 
-  it("keeps going when session/set_model is missing and argv already pinned the model", async () => {
+  it("fails when the parameterized settings method is missing", async () => {
     ensureDirs();
     chmodSync(FAKE_CLI, 0o755);
     process.env.FAKE_ACP_MODE = "no-session-config";
@@ -488,258 +569,11 @@ describe("CursorAgentDriver", () => {
     try {
       await instance.adapter.sendTurn({ threadId: "t-cursor-old", text: "hi", model: "gpt-5.3-codex" });
       const done = await recorder.until((e) => e.type === "turn.completed");
-      expect(done).toMatchObject({ type: "turn.completed", ok: true });
+      expect(done).toMatchObject({ type: "turn.completed", ok: false });
     } finally {
       recorder.stop();
       await instance.dispose();
       delete process.env.FAKE_ACP_MODE;
-    }
-  });
-});
-
-describe("resolveCursorAcpModelId", () => {
-  // Real payload shape from `session/new` against cursor-agent 2026.08.11.
-  const ADVERTISED = [
-    { modelId: "default[]", name: "Auto" },
-    { modelId: "grok-4.6[effort=high,fast=true]", name: "grok-4.6" },
-    { modelId: "gpt-5.3-codex[reasoning=medium,fast=false]", name: "gpt-5.3-codex" },
-  ];
-
-  it("maps the argv slug `auto` onto Cursor's `default[]` entry", () => {
-    expect(resolveCursorAcpModelId(ADVERTISED, "auto")).toBe("default[]");
-  });
-
-  it("maps a bare slug onto its parameterised id", () => {
-    expect(resolveCursorAcpModelId(ADVERTISED, "gpt-5.3-codex")).toBe(
-      "gpt-5.3-codex[reasoning=medium,fast=false]",
-    );
-  });
-
-  it("maps a display name onto its parameterised id", () => {
-    expect(
-      resolveCursorAcpModelId(
-        [{ modelId: "gpt-5.3-codex[reasoning=medium,fast=false]", name: "Codex 5.3" }],
-        "Codex 5.3",
-      ),
-    ).toBe("gpt-5.3-codex[reasoning=medium,fast=false]");
-  });
-
-  it("passes an already-parameterised id straight through", () => {
-    expect(resolveCursorAcpModelId(ADVERTISED, "grok-4.6[effort=high,fast=true]")).toBe(
-      "grok-4.6[effort=high,fast=true]",
-    );
-  });
-
-  describe("when one base is advertised with and without fast", () => {
-    const FAST_FIRST = [
-      { modelId: "composer-2.5[fast=true]", name: "Composer 2.5 Fast" },
-      { modelId: "composer-2.5[fast=false]", name: "Composer 2.5" },
-    ];
-
-    it("resolves the plain slug to the non-fast variant even when fast is listed first", () => {
-      expect(resolveCursorAcpModelId(FAST_FIRST, "composer-2.5")).toBe("composer-2.5[fast=false]");
-    });
-
-    it("resolves the plain slug to the non-fast variant when it is listed first", () => {
-      expect(resolveCursorAcpModelId([...FAST_FIRST].reverse(), "composer-2.5")).toBe(
-        "composer-2.5[fast=false]",
-      );
-    });
-
-    it("resolves the `-fast` slug to the fast=true variant", () => {
-      expect(resolveCursorAcpModelId(FAST_FIRST, "composer-2.5-fast")).toBe("composer-2.5[fast=true]");
-    });
-
-    it("falls back to the only advertised variant for the plain slug", () => {
-      expect(resolveCursorAcpModelId([FAST_FIRST[0]], "composer-2.5")).toBe("composer-2.5[fast=true]");
-    });
-
-    it("does not map a `-fast` slug onto a non-fast variant", () => {
-      expect(resolveCursorAcpModelId([FAST_FIRST[1]], "composer-2.5-fast")).toBeNull();
-    });
-  });
-
-  it("returns null when the agent advertised no models, so the caller keeps the argv slug", () => {
-    expect(resolveCursorAcpModelId([], "auto")).toBeNull();
-  });
-
-  it("returns null for a model this session does not offer", () => {
-    expect(resolveCursorAcpModelId(ADVERTISED, "no-such-model")).toBeNull();
-  });
-
-  describe("effort slugs from `cursor-agent models`", () => {
-    // Real payload from `session/new` on cursor-agent 2026.09.28: one variant per base.
-    const ADVERTISED_EFFORT = [
-      { modelId: "default[]", name: "Auto" },
-      { modelId: "grok-4.7[context=256k,reasoning_effort=high,fast=true]", name: "grok-4.7" },
-      { modelId: "grok-4.6[effort=high,fast=true]", name: "grok-4.6" },
-      { modelId: "gpt-5.3-codex[reasoning=medium,fast=false]", name: "gpt-5.3-codex" },
-      { modelId: "composer-2.5[fast=false]", name: "Composer 2.5" },
-    ];
-
-    it("maps an effort slug onto the variant with that effort", () => {
-      expect(matchCursorAcpModel(ADVERTISED_EFFORT, "grok-4.7-high-fast")).toEqual({
-        modelId: "grok-4.7[context=256k,reasoning_effort=high,fast=true]",
-        exact: true,
-      });
-      expect(resolveCursorAcpModelId(ADVERTISED_EFFORT, "grok-4.6-high-fast")).toBe("grok-4.6[effort=high,fast=true]");
-      expect(resolveCursorAcpModelId(ADVERTISED_EFFORT, "gpt-5.3-codex-medium")).toBe(
-        "gpt-5.3-codex[reasoning=medium,fast=false]",
-      );
-    });
-
-    it("settles for the advertised variant of the base and marks it inexact", () => {
-      expect(matchCursorAcpModel(ADVERTISED_EFFORT, "grok-4.7-medium-fast")).toEqual({
-        modelId: "grok-4.7[context=256k,reasoning_effort=high,fast=true]",
-        exact: false,
-      });
-      expect(matchCursorAcpModel(ADVERTISED_EFFORT, "grok-4.7-high")).toEqual({
-        modelId: "grok-4.7[context=256k,reasoning_effort=high,fast=true]",
-        exact: false,
-      });
-    });
-
-    it("does not map a `-fast` effort slug onto a non-fast variant", () => {
-      expect(matchCursorAcpModel(ADVERTISED_EFFORT, "composer-2.5-high-fast")).toBeNull();
-    });
-
-    it("returns null for an effort slug of a base this session does not offer", () => {
-      expect(matchCursorAcpModel(ADVERTISED_EFFORT, "no-such-model-high-fast")).toBeNull();
-    });
-  });
-});
-
-describe("cursor ACP model namespace (NS: set_model wiring)", () => {
-  it("sends the session's parameterised id, not the argv slug", async () => {
-    ensureDirs();
-    chmodSync(FAKE_CLI, 0o755);
-    const scratch = mkdtempSync(join(tmpdir(), "omb-cursor-acpid-"));
-    const dump = join(scratch, "dump.json");
-    process.env.FAKE_ACP_DUMP = dump;
-    // What cursor-agent 2026.08.11 really advertises: `auto` is `default[]`.
-    process.env.FAKE_ACP_SESSION_MODELS = "default[]|Auto,gpt-5.3-codex[reasoning=medium,fast=false]|gpt-5.3-codex";
-
-    const instance = await CursorAgentDriver.create({
-      instanceId: "cursor-acpid",
-      displayName: "Cursor",
-      environment: {},
-      enabled: true,
-      config: { cli: FAKE_CLI, fullAuto: false },
-    });
-    const recorder = recordEvents(instance.adapter);
-    try {
-      await instance.adapter.sendTurn({ threadId: "t-cursor-acpid", text: "hi", model: "auto" });
-      await recorder.until((e) => e.type === "turn.completed");
-      const applied = JSON.parse(readFileSync(`${dump}.config.json`, "utf8"));
-      expect(applied).toEqual([
-        { method: "session/set_model", params: { sessionId: "fake-acp-session", modelId: "default[]" } },
-      ]);
-      expect(JSON.parse(readFileSync(dump, "utf8")).argv).toEqual(["--model", "auto", "acp"]);
-    } finally {
-      recorder.stop();
-      await instance.dispose();
-      delete process.env.FAKE_ACP_SESSION_MODELS;
-      // A stale FAKE_ACP_DUMP makes the next test's fake CLI die on ENOENT.
-      delete process.env.FAKE_ACP_DUMP;
-      await removeTempDir(scratch);
-    }
-  });
-
-  it("completes the turn when set_model answers -32602 and says which model runs instead", async () => {
-    ensureDirs();
-    chmodSync(FAKE_CLI, 0o755);
-    process.env.FAKE_ACP_MODE = "set-model-invalid-params";
-    process.env.FAKE_ACP_SESSION_MODELS = "default[]|Auto,gpt-5.3-codex[reasoning=medium,fast=false]|gpt-5.3-codex";
-    const instance = await CursorAgentDriver.create({
-      instanceId: "cursor-invalid",
-      displayName: "Cursor",
-      environment: {},
-      enabled: true,
-      config: { cli: FAKE_CLI, fullAuto: false },
-    });
-    const recorder = recordEvents(instance.adapter);
-    try {
-      await instance.adapter.sendTurn({ threadId: "t-cursor-invalid", text: "hi", model: "gpt-5.3-codex" });
-      const done = await recorder.until((e) => e.type === "turn.completed");
-      expect(done).toMatchObject({ type: "turn.completed", ok: true });
-      expect(recorder.events.filter((e) => e.type === "runtime.notice")).toEqual([
-        expect.objectContaining({ message: expect.stringContaining("did not accept gpt-5.3-codex in this session, so it runs Auto") }),
-      ]);
-    } finally {
-      recorder.stop();
-      await instance.dispose();
-      delete process.env.FAKE_ACP_MODE;
-      delete process.env.FAKE_ACP_SESSION_MODELS;
-    }
-  });
-
-  it("reports the last accepted model when a pooled session rejects a later pin", async () => {
-    ensureDirs();
-    chmodSync(FAKE_CLI, 0o755);
-    process.env.FAKE_ACP_MODE = "set-model-invalid-after-first";
-    process.env.FAKE_ACP_SESSION_MODELS = "default[]|Auto,grok-4.7[reasoning_effort=high,fast=true]|Grok";
-    const instance = await CursorAgentDriver.create({
-      instanceId: "cursor-pooled-rejection", displayName: "Cursor", environment: {}, enabled: true,
-      config: { cli: FAKE_CLI, fullAuto: false },
-    });
-    const recorder = recordEvents(instance.adapter);
-    try {
-      for (const text of ["first", "second"]) {
-        const turn = await instance.adapter.sendTurn({ threadId: "t-cursor-pooled-rejection", text, model: "grok-4.7-high-fast" });
-        expect(await recorder.until((e) => e.type === "turn.completed" && e.turnId === turn.turnId)).toMatchObject({ ok: true });
-      }
-      expect(recorder.events.filter((e) => e.type === "runtime.notice")).toEqual([
-        expect.objectContaining({ message: expect.stringContaining("did not accept grok-4.7-high-fast in this session, so it runs Grok") }),
-      ]);
-    } finally {
-      recorder.stop();
-      await instance.dispose();
-      delete process.env.FAKE_ACP_MODE;
-      delete process.env.FAKE_ACP_SESSION_MODELS;
-    }
-  });
-
-  it("sets the advertised variant for an effort slug and says when it differs", async () => {
-    ensureDirs();
-    chmodSync(FAKE_CLI, 0o755);
-    const scratch = mkdtempSync(join(tmpdir(), "omb-cursor-effort-"));
-    const dump = join(scratch, "dump.json");
-    process.env.FAKE_ACP_DUMP = dump;
-    process.env.FAKE_ACP_SESSION_MODELS = "default[]|Auto,grok-4.7[context=256k,reasoning_effort=high,fast=true]|grok-4.7";
-
-    const instance = await CursorAgentDriver.create({
-      instanceId: "cursor-effort",
-      displayName: "Cursor",
-      environment: {},
-      enabled: true,
-      config: { cli: FAKE_CLI, fullAuto: false },
-    });
-    const recorder = recordEvents(instance.adapter);
-    try {
-      await instance.adapter.sendTurn({ threadId: "t-cursor-effort", text: "hi", model: "grok-4.7-medium-fast" });
-      await recorder.until((e) => e.type === "turn.completed");
-      const applied = JSON.parse(readFileSync(`${dump}.config.json`, "utf8"));
-      expect(applied).toEqual([
-        {
-          method: "session/set_model",
-          params: { sessionId: "fake-acp-session", modelId: "grok-4.7[context=256k,reasoning_effort=high,fast=true]" },
-        },
-      ]);
-      expect(recorder.events.filter((e) => e.type === "runtime.notice")).toEqual([
-        expect.objectContaining({
-          message: expect.stringContaining("rather than grok-4.7-medium-fast"),
-        }),
-      ]);
-      const second = await instance.adapter.sendTurn({ threadId: "t-cursor-effort", text: "again", model: "grok-4.7-medium-fast" });
-      expect(await recorder.until((e) => e.type === "turn.completed" && e.turnId === second.turnId)).toMatchObject({ ok: true });
-      expect(JSON.parse(readFileSync(`${dump}.config.json`, "utf8"))).toEqual([...applied, ...applied]);
-      expect(recorder.events.filter((e) => e.type === "runtime.notice")).toHaveLength(1);
-    } finally {
-      recorder.stop();
-      await instance.dispose();
-      delete process.env.FAKE_ACP_SESSION_MODELS;
-      delete process.env.FAKE_ACP_DUMP;
-      await removeTempDir(scratch);
     }
   });
 });

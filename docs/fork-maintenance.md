@@ -22,7 +22,7 @@
 新增多套 OpenAI 兼容接口、Cursor／Grok／Pi 与 Codex 异步提问卡片、浏览器上传和悬停、Claude Code 个人技能目录、浏览器通知、自部署更新提示及官方 My Cloud 的 Files 页面，并修复模型刷新、聊天排序和工具失败状态。
 全部引擎的 Full Access 继续使用上游实现；流式显示、按需安装 Cursor、套餐用量、独立 Codex 设备码账号和 Docker 部署定制继续保留。
 
-最近一次上游同步见第 18 节，最新账号功能及两端发布见第 17 节。第 10—17 节保留相应历史记录。
+最近一次上游同步见第 18 节，最新账号功能及两端发布见第 17 节，Cursor 参数适配修改见第 19 节。第 10—17 节保留相应历史记录。
 第 17 节记录的本机和 50 部署均为 0.1.111，制品来自 `db97b8293`。**本次只同步代码，没有重新部署；源码分支领先于已部署制品。**
 
 ## 2. 必须保留的定制
@@ -33,6 +33,7 @@
 | 流式代码块渲染 | `src/components/ChatMarkdown.tsx` | 流式阶段延迟高亮；同时采用上游的超大代码块纯文本策略、公式按需加载和附件渲染 |
 | 上游统一 Full Access | `shared/approval-mode.ts`、ACP／Pi 驱动、`server/runtime/capabilities.test.ts` | 0.1.111 已涵盖 Kimi、Droid、Hermes、Pi、Custom ACP；不恢复 fork 的引擎白名单或旧授权桥接；真实用户问题仍需回答 |
 | Cursor 面板安装／登录／更新 | `server/drivers/cursor-{auth,install,release}.ts`、`server/drivers/acp/cursor.ts`、`server/harness/registry.ts`、`CursorSignIn.tsx`、`EngineSetup.tsx` | 按需安装，网页完成官方登录，检测版本并原生更新；优先使用实例 HOME 内安装的 CLI，不依赖镜像预装 |
+| Cursor 模型参数 | `server/drivers/acp/cursor-model.ts`、`server/drivers/acp/core.ts` | 协商参数化接口，使用提供方元数据映射模型与参数；每轮显式设置 Fast 开关，不自动换模型、不回读核验配置结果 |
 | Cursor／Antigravity 套餐用量 | `server/plan-usage.ts`、`PlanUsage.tsx`、相关 fixture | 显示提供方返回的窗口、月度额度、模型池和重置时间；不可获取时显示真实状态，不编造额度 |
 | ChatGPT 账号类型 | `shared/codex-account.ts`、`server/drivers/codex-account.ts`、`server/routes/instances.ts`、`EngineAccounts.tsx` | 添加账号时明确选择“Codex 设备码登录”或“ChatGPT plan”；登录、运行、模型、用量、退出使用同一账号目录，不自动切换认证流程 |
 | VM 查看地址 | `server/local-vm-viewer.ts`、`server/routes/computers.ts`、查看器路由 | 浏览器使用当前访问源／代理信息生成地址；局域网、Tunnel、宿主机 HTTPS 都不跳到客户端的 `127.0.0.1` |
@@ -60,10 +61,10 @@
 Cursor 不需要在构建／启动 Docker 时预装。在“模型提供方／引擎”的 Cursor 卡片里安装、登录、检查更新。
 CLI 和身份信息保存在容器的持久 HOME `/data`，更新镜像不应把它们清掉。
 实例显式设置 CLI 路径时应尊重该路径；默认情况优先使用 `/data/.local` 下的安装。
-详情参见 [Cursor 文档](cursor.md)。
+详情参见 [Cursor 文档](cursor.md)，参数化模型适配见第 19 节。
 
 `--model` 参数本身不能证明 ACP 实际用了该模型；需要检查 session 模型选择、提示信息和相关 fake CLI 测试。
-已知问题：当前旧式 ACP 变体匹配可能把非 Fast 的 Grok High 替换成 Fast。2026-10-14 版 Cursor 的参数化 ACP 接口已在隔离会话中确认接受 `reasoning_effort=high` 和 `fast=false`；本次上游合并未改变这段模型选择逻辑，修复仍需单独实现，不能把提问卡片支持当作模型参数修复。
+源码已启用 Cursor 参数化模型接口，按所选条目分别设置原生模型、推理强度与 Fast 等参数；旧式变体替换已移除。配置接口按成功／报错处理，不增加回读核验。具体行为和验证范围见第 19 节；运行中镜像仍需另行部署这次修改。
 
 ## 3. 当前部署在哪里
 
@@ -787,7 +788,7 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 - 保留文字／reasoning 流式缓冲和结束清理；代码块同时支持流式阶段延迟高亮与上游的 fence 换行指令。
 - 保留 Cursor 面板按需安装、登录、更新及实例 HOME 解析，Cursor／Antigravity 套餐用量，以及第 17 节的两种账号认证与独立 `CODEX_HOME`。
 - 保留 HTTP、Tunnel、两种可选 Caddy HTTPS、VM、宿主机文件与 rclone 配置 overlay；没有修改实际部署配置或数据卷。
-- Full Access 继续使用上游统一实现。Cursor 的非 Fast 被替换问题仍是第 2 节所述待修问题，本次没有顺带改变模型选择行为。
+- Full Access 继续使用上游统一实现。这次上游合并没有修改 Cursor 的模型选择，后续参数适配见第 19 节。
 
 ### 冲突与检查说明
 
@@ -802,3 +803,23 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 验证日志位于被忽略的 `.omb-scratch/upstream-sync-20261015-de63346e9/`。所有 API、账号、对话及浏览器验证使用临时 HOME／数据与模拟引擎。
 
 **本次只同步源码，没有部署或重新构建运行中的镜像。** 本机和 50 的最后部署记录仍是第 17 节的 `db97b8293` 制品；后续部署应从本次合并后的 fork 完整 SHA 重新构建，并更新镜像中的 `/app/package.json` 与 `deployment-manifest.json`，不能仅因版本号仍是 0.1.111 就复用旧应用制品。
+
+## 19. Cursor 参数化模型设置
+
+修改基于同步提交 `313cfb447`，源码版本仍为 0.1.111；本节记录代码修改与隔离验证，运行环境的最后发布仍是第 17 节。
+
+- 普通会话与后台 ACP 握手都传入 Cursor 的 `_meta.parameterizedModelPicker: true`。其他引擎不带这个能力，文件／终端能力仍由原有核心逻辑控制。
+- `cursor/list_available_models` 提供原生模型名和参数定义。所选 CLI 条目的显示名称映射到对应原生模型及参数；推理字段名、档位和值均使用元数据，不建立 Grok 或 GPT 的型号映射表。显示名称中的上下文与 Thinking 配置一并保留。
+- 每轮通过 `session/set_config_option` 设置模型及参数。High 显式设置 `fast=false`，High Fast 设置 `fast=true`；每轮重设参数，避免沿用上一轮的 Fast。没有新增配置回读或设置结果比对，设置请求的结果体不参与判断，RPC 报错正常使当前轮失败。
+- 删除旧的“最接近变体”、参数拒绝后沿用其他模型、方法缺失后依赖启动参数等继续执行路径。请求的模型或参数不能解析时直接失败。
+- 启动参数不再携带 `--model`；模型选择统一走 ACP。同一线程切换模型时可复用进程，权限、工作目录、凭据或工具范围变化仍按原有契约处理。
+- 源码位于 `server/drivers/acp/cursor-model.ts` 和 `cursor.ts`；共享 ACP 核心传递实例模型标签与客户端能力，后台纯文本生成也传递同一客户端能力。核心文件行数上限由 2019 降到 2017。
+
+### 验证范围
+
+- 参数映射、Cursor 驱动、共享 ACP、后台生成、审批矩阵及文件大小检查共 6 个文件、234 项测试最终分批通过。首轮发现 `--model` 导致进程重启，删除后确认 High Fast → High → Medium 在同一 PID 中执行。协议记录明确包含参数设置和 prompt，不包含配置回读；假 CLI 的空确认可继续，拒绝 Fast 则不发送 prompt。
+- `lint`、`typecheck`、server 构建与隔离 packaged smoke 通过。打包服务在临时 HOME／数据中验证启动、13 个代理入口、MCP、headless CLI、导出 worker、launcher、compile cache 与 enterprise 层发现。
+- 读取当前 Cursor 2026.10.14 的模型元数据，对 45 个原生模型基类与 CLI 返回的 259 个模型条目做离线映射，均可解析。这是模型配置映射证据，没有发起真实模型推理。
+- 假 CLI 与协议测试使用隔离数据；真实 CLI 目录查询只取得模型元数据，ACP 查询使用临时配置副本，结束后删除。未更改生产账号、会话、Compose 或运行中的镜像。
+
+证据目录为被忽略的 `.omb-scratch/cursor-parameters-20261015/`，包含模型元数据、映射汇总、分批测试、静态检查、构建和打包日志。

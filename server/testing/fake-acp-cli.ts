@@ -45,6 +45,7 @@
 //   FAKE_ACP_MODE_ACK_FILE  while it exists a mode switch answers "empty" (no configOptions) or "error"
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { CURSOR_MODEL_FIXTURE } from "./cursor-model-fixture.ts";
 
 const mode = process.env.FAKE_ACP_MODE ?? "happy";
 
@@ -332,6 +333,9 @@ const recordMethod = (method: string) => {
 };
 
 const configCalls: Array<{ method: string; params: unknown }> = [];
+const cursorModels = process.env.FAKE_ACP_CURSOR_MODELS ? JSON.parse(process.env.FAKE_ACP_CURSOR_MODELS) : CURSOR_MODEL_FIXTURE;
+let cursorParameterized = false;
+let cursorParameters: Record<string, string> = {};
 
 let pendingPermissionId: number | null = null;
 let onPermissionAnswered: ((allowed: boolean) => void) | null = null;
@@ -553,6 +557,8 @@ function handle(msg: any) {
 
   switch (msg.method) {
     case "initialize": {
+      cursorParameterized = msg.params?.clientCapabilities?._meta?.parameterizedModelPicker === true;
+      if (process.env.FAKE_ACP_DUMP) writeFileSync(`${process.env.FAKE_ACP_DUMP}.initialize.json`, JSON.stringify(msg.params));
       if (failRpc(msg)) break;
       if (mode === "hang-initialize") {
         setInterval(() => {}, 1_000);
@@ -707,8 +713,27 @@ function handle(msg: any) {
       result(msg.id, {});
       break;
     }
+    case "cursor/list_available_models": {
+      if (!cursorParameterized) return out({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "Parameterized picker was not negotiated" } });
+      result(msg.id, { models: cursorModels });
+      break;
+    }
     case "session/set_config_option": {
       const { configId, value } = msg.params ?? {};
+      if (cursorParameterized) {
+        if (mode === "no-session-config") return out({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "method not found" } });
+        const model = cursorModels.find((entry: { value: string }) => entry.value === (configId === "model" ? value : currentModel));
+        const option = model?.configOptions?.find((entry: { id: string }) => entry.id === configId);
+        if (!model || configId !== "model" && !option?.options.some((entry: { value: string }) => entry.value === value) || process.env.FAKE_ACP_CURSOR_REJECT === configId) {
+          return out({ jsonrpc: "2.0", id: msg.id, error: { code: -32602, message: `Invalid config option ${configId}: ${value}` } });
+        }
+        if (configId === "model") { currentModel = value; cursorParameters = {}; }
+        else cursorParameters[configId] = value;
+        configCalls.push({ method: msg.method, params: msg.params });
+        if (process.env.FAKE_ACP_DUMP) writeFileSync(`${process.env.FAKE_ACP_DUMP}.config.json`, JSON.stringify(configCalls));
+        result(msg.id, {});
+        break;
+      }
       const variant = variantConfigs[currentModel ?? ""];
       if (variant && configId === (variant.id ?? "effort") && variantValues(variant.options).includes(value)) {
         if (!process.env.FAKE_ACP_VARIANT_STICKS) currentVariant = value;
@@ -758,9 +783,10 @@ function handle(msg: any) {
       break;
     }
     case "session/prompt": {
-      if (process.env.FAKE_ACP_DUMP && (modes.length || models.length)) {
+      if (process.env.FAKE_ACP_DUMP && (modes.length || models.length || cursorParameterized)) {
         appendFileSync(`${process.env.FAKE_ACP_DUMP}.prompts.jsonl`, JSON.stringify({
           pid: process.pid, sessionId: msg.params?.sessionId, mode: currentMode, model: currentModel,
+          ...(cursorParameterized ? { parameters: cursorParameters } : {}),
         }) + "\n");
       }
       emitConfigUpdates("session/prompt", msg.params.sessionId);

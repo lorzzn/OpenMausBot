@@ -74,21 +74,24 @@ Live ids are merged into the main cloud rail (not the local-models pane). A
 failed listing keeps the last usable catalog (then the static fallback) rather
 than emptying the rail.
 
-`--model <id>` is passed as a global CLI flag before `acp`. Current CLIs
-(checked with 2026.09.28) ignore that flag in ACP sessions: every session
-starts on `default[]` (Auto). The pick only lands through ACP
-`session/set_model`, which accepts only the parameterised ids the session
-advertises, such as `grok-4.7[context=256k,reasoning_effort=high,fast=true]`.
-OpenMausBot maps the picker slug onto that list: `auto` to `default[]`, a
-plain slug to its Standard variant, `-fast` to `fast=true`, and an effort
-slug such as `grok-4.7-high-fast` to the variant with that effort. The
-session advertises one variant per base, so a slug with another effort
-(`grok-4.7-medium-fast`) gets that variant and a notice in the conversation.
+OpenMausBot negotiates Cursor's parameterized picker with
+`clientCapabilities._meta.parameterizedModelPicker: true`. Before each turn,
+`cursor/list_available_models` supplies the base models and their parameter
+definitions. The picker entry's CLI label identifies the base and explicit
+parameters; provider-defined names and values handle reasoning, Thinking,
+context and Fast without a table of model-specific aliases.
 
-If `session/set_model` is missing (`-32601`), the argv pin is left to stand
-and the turn continues. If Cursor refuses the id (`-32602`), the turn also
-continues, on the model the session started with, and the conversation shows
-a notice that names it.
+The driver uses `session/set_config_option` to set the model and parameters.
+For example, **Grok 4.7 High** selects `grok-4.7`, `reasoning_effort=high` and
+`fast=false`; **High Fast** sets `fast=true`. Parameters not named in the entry
+use Cursor's advertised defaults, except boolean switches without a matching
+suffix are off. Settings are applied again for pooled and restored sessions,
+so switching away from Fast explicitly turns it off.
+
+Setting acknowledgements are not read back or compared with the selection.
+An RPC error fails the turn before its prompt; an unavailable model or an
+unrecognized parameter does not select another variant. This requires the
+parameterized interface, checked against Cursor Agent 2026.10.14.
 
 ## Autonomy
 
