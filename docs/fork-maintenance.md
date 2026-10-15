@@ -22,8 +22,8 @@
 新增多套 OpenAI 兼容接口、Cursor／Grok／Pi 与 Codex 异步提问卡片、浏览器上传和悬停、Claude Code 个人技能目录、浏览器通知、自部署更新提示及官方 My Cloud 的 Files 页面，并修复模型刷新、聊天排序和工具失败状态。
 全部引擎的 Full Access 继续使用上游实现；流式显示、按需安装 Cursor、套餐用量、独立 Codex 设备码账号和 Docker 部署定制继续保留。
 
-最近一次上游同步见第 18 节，最新账号功能及两端发布见第 17 节，Cursor 参数适配修改见第 19 节。第 10—17 节保留相应历史记录。
-第 17 节记录的本机和 50 部署均为 0.1.111，制品来自 `db97b8293`。**本次只同步代码，没有重新部署；源码分支领先于已部署制品。**
+最近一次上游同步见第 18 节，账号功能见第 17 节，Cursor 参数适配及最新两端发布见第 19 节。第 10—18 节保留相应历史记录。
+本机和 50 均已部署 0.1.111，制品来自 `2dce5fc0d524a367b3f9fea398b4b33d9ff07a6a`，包含第 18 节的上游同步与第 19 节的 Cursor 修复。后续仅更新部署文档的提交不改变镜像内的制品源码 SHA。
 
 ## 2. 必须保留的定制
 
@@ -63,8 +63,8 @@ CLI 和身份信息保存在容器的持久 HOME `/data`，更新镜像不应把
 实例显式设置 CLI 路径时应尊重该路径；默认情况优先使用 `/data/.local` 下的安装。
 详情参见 [Cursor 文档](cursor.md)，参数化模型适配见第 19 节。
 
-`--model` 参数本身不能证明 ACP 实际用了该模型；需要检查 session 模型选择、提示信息和相关 fake CLI 测试。
-源码已启用 Cursor 参数化模型接口，按所选条目分别设置原生模型、推理强度与 Fast 等参数；旧式变体替换已移除。配置接口按成功／报错处理，不增加回读核验。具体行为和验证范围见第 19 节；运行中镜像仍需另行部署这次修改。
+Cursor 模型统一通过 ACP 配置接口设置，不再放入启动参数 `--model`；协议行为由隔离 fake CLI 测试覆盖。
+两端已启用 Cursor 参数化模型接口，按所选条目分别设置原生模型、推理强度与 Fast 等参数；旧式变体替换已移除。配置接口按成功／报错处理，不增加回读核验。具体行为和验证范围见第 19 节。
 
 ## 3. 当前部署在哪里
 
@@ -74,7 +74,7 @@ CLI 和身份信息保存在容器的持久 HOME `/data`，更新镜像不应把
 | --- | --- | --- |
 | 主机 | 当前开发电脑 | `108.186.129.50` |
 | 源码目录 | `/home/zhipeng/codes/OpenMausBot` | `/opt/OpenMausBot` |
-| 运行制品的源码 HEAD | `db97b8293` | `db97b8293`，同一份编译制品 |
+| 运行制品的源码 SHA | `2dce5fc0d` | `2dce5fc0d`，同一份编译制品 |
 | 核对时应用版本 | `0.1.111` | `0.1.111` |
 | 对外地址 | `https://omb.oomdev.de5.net/` | `https://ombus.oomdev.de5.net/` |
 | Docker 主机端口 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
@@ -802,11 +802,11 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 
 验证日志位于被忽略的 `.omb-scratch/upstream-sync-20261015-de63346e9/`。所有 API、账号、对话及浏览器验证使用临时 HOME／数据与模拟引擎。
 
-**本次只同步源码，没有部署或重新构建运行中的镜像。** 本机和 50 的最后部署记录仍是第 17 节的 `db97b8293` 制品；后续部署应从本次合并后的 fork 完整 SHA 重新构建，并更新镜像中的 `/app/package.json` 与 `deployment-manifest.json`，不能仅因版本号仍是 0.1.111 就复用旧应用制品。
+**同步提交当时只更新源码，没有部署。** 随后的第 19 节发布已从包含本次合并的完整 fork SHA 重新构建，并更新镜像中的 `/app/package.json` 与 `deployment-manifest.json`；没有因为版本号仍是 0.1.111 而复用旧应用制品。
 
 ## 19. Cursor 参数化模型设置
 
-修改基于同步提交 `313cfb447`，源码版本仍为 0.1.111；本节记录代码修改与隔离验证，运行环境的最后发布仍是第 17 节。
+修改基于同步提交 `313cfb447`，源码版本仍为 0.1.111。修复提交为 `2dce5fc0d524a367b3f9fea398b4b33d9ff07a6a`，已推送至 `origin/feature/zpmodified` 并部署到两端。
 
 - 普通会话与后台 ACP 握手都传入 Cursor 的 `_meta.parameterizedModelPicker: true`。其他引擎不带这个能力，文件／终端能力仍由原有核心逻辑控制。
 - `cursor/list_available_models` 提供原生模型名和参数定义。所选 CLI 条目的显示名称映射到对应原生模型及参数；推理字段名、档位和值均使用元数据，不建立 Grok 或 GPT 的型号映射表。显示名称中的上下文与 Thinking 配置一并保留。
@@ -823,3 +823,31 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 - 假 CLI 与协议测试使用隔离数据；真实 CLI 目录查询只取得模型元数据，ACP 查询使用临时配置副本，结束后删除。未更改生产账号、会话、Compose 或运行中的镜像。
 
 证据目录为被忽略的 `.omb-scratch/cursor-parameters-20261015/`，包含模型元数据、映射汇总、分批测试、静态检查、构建和打包日志。
+
+### 两端部署结果（2026-10-15）
+
+本次同时发布第 18 节的上游同步和本节的 Cursor 修复。发布标签为 `openmausbot-vm:0.1.111-2dce5fc0d`，运行标签仍为 `openmausbot-vm:local`。
+
+| 项目 | 本机 | 50 |
+| --- | --- | --- |
+| 制品源码 SHA | `2dce5fc0d524a367b3f9fea398b4b33d9ff07a6a` | 同左 |
+| 上游基线 | `de63346e9347abb51048ae74ef3121d125fd11d2` | 同左 |
+| `/app/package.json` 版本 | `0.1.111` | 同左 |
+| 实际镜像 ID | `sha256:ac2b26bb456f6e8ce5c29b52f0e37addbe7327bf954e0a073d4bd424a4e7082a` | `sha256:dc5dbf047ec2b8351abeaba690f0724f024e8f40ee9502d4b583071723c9ea53` |
+| Compose | 基础 + VM + Tunnel + mnt + rclone | 基础 + VM + mnt + rclone |
+| HTTP 映射 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
+| 公网入口 | `https://omb.oomdev.de5.net` | `https://ombus.oomdev.de5.net` |
+| 状态 | healthy，RestartCount 0 | healthy，RestartCount 0 |
+
+- 从干净的已提交源码清空 server/UI 输出后重新构建，并准备锁定版本的 DuckDB、resvg、1Password 资源。推送前 lint、typecheck 和 12 个语言包的翻译检查通过；英文源字符串为 4542 条。
+- 独立 packaged smoke 通过：仓库及 `node_modules` 外启动、13 个代理入口、MCP、headless CLI、隔离导出 worker、launcher、compile cache 和 enterprise 模块发现。前端构建成功，仍报告既有大 chunk 与 CSS `::highlight` 识别警告，没有调整这些构建规则。
+- 继续使用第 11 节的制品覆盖方法，两端基础镜像均为 `sha256:6474542e76e44ef73280a82dbd61600e5c243905beeb60c896710d3890a790c2`，没有重新安装持久 HOME 内的引擎。镜像内 `deployment-manifest.json` 记录完整 fork／上游 SHA、构建时间及逐文件校验值。
+- 两台最终镜像的 **1299 个应用制品文件**全部校验通过，聚合 SHA-256 为 `fccf3619163c3fbef88da59b798e7211ddc1fb44a03f59efd4b1ed7ba1f6f251`。一次性无网络容器通过 DuckDB SQL、resvg PNG、1Password SDK 加载及 WASM 校验；本机最终镜像还以临时 HOME、无生产数据挂载独立启动，通过健康及网页检查。
+- 本机 loopback／Tunnel、50 loopback／宿主机 Caddy 四个入口的健康接口与首页通过，首页 SHA-256 均为 `2c0d80163b19e35581e5d9df477be903f59ccd2709be12eea63fbfd762864e59`。
+- 两端更新前后数据卷、UID/GID 1000:1000、512 MiB 共享内存、端口、VM socket、`/mnt` RW/rslave 与 rclone 目录 RW 绑定一致。应用 UID 可读两个云盘目录及配置；本机已有 rclone 的 `listremotes` 通过，50 仍只挂配置、没有安装 rclone 程序。
+- 专用 VM daemon 29.8.1 连接通过；dind 与本机 cloudflared 均连接重新创建后的应用网络命名空间。两端继续使用原有 Compose 组合，未运行 Caddy 容器。
+- 50 使用原有 `/usr/local/bin/omb-compose` 更新，宿主机 Caddy active/enabled，配置哈希仍为 `7cc1951ff095404a5001850a9977a9ffe5d36bc45fa42f5b4abbe446e0e1e7b9`，既有 OMB／Orca 路由保留。源码仓库通过完整 bundle 校验后快进。
+- 50 已删除被替换的旧应用镜像、制品归档、源码 bundle、校验脚本和临时构建目录，没有制作用户数据备份。本机保留 `openmausbot-vm:before-cursor-parameters-20261015`。文档提交仅更新源码工作树，不因此再重建或重启应用。
+- 未发送邮箱验证码、生成生产配对码或发起真实付费模型推理。Cursor 参数协议的证据来自前述隔离测试；部署检查证明制品、入口、容器、挂载与 VM 连接，不扩大为实际模型推理结果的证明。
+
+发布证据位于 `.omb-scratch/cursor-parameters-deploy-20261015/`，包括两端 receipt、`push.log`、构建／部署日志、两端原生模块与文件校验、`image-smoke.json`、`cleanup-50-final.log`。50 仅保留不含凭据或用户内容的 `.omb-scratch/deployment-receipt.json` 运维回执。
