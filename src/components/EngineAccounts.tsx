@@ -11,6 +11,7 @@ import { DeviceSignIn, deviceSignInProvider } from "./DeviceSignIn";
 import { ChatGptPlanStatus } from "./ChatGptPlanStatus";
 import { EngineCard, engineReady, providerName, type EngineCardSummary } from "./EngineLibrary";
 import { CommandRow, EngineSetup, EngineUpdateNotice, EngineWarningNotice } from "./EngineSetup";
+import { Select } from "./Select";
 
 /** Providers whose accounts are listed together on one card, each signed in on its own. */
 export type AccountGroup = "claude" | "chatgpt";
@@ -297,10 +298,9 @@ export function AddAccount({ label, endpoint, extra, folder: offerFolder = false
       {chatgpt && (
         <label className="flex flex-col gap-1 text-[12px] font-medium text-ink">
           {t("accounts.authModeLabel")}
-          <select value={authMode} onChange={(event) => { if (isCodexAccountAuthMode(event.target.value)) setAuthMode(event.target.value); }} disabled={saving}
-            className="rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] font-normal text-ink outline-none focus:border-accent-border disabled:opacity-50">
+          <Select value={authMode} onChange={(event) => { if (isCodexAccountAuthMode(event.target.value)) setAuthMode(event.target.value); }} disabled={saving}>
             {CODEX_ACCOUNT_AUTH_MODES.map((mode) => <option key={mode} value={mode}>{t(mode === "device-code" ? "accounts.authModeDeviceCode" : "accounts.authModeChatgptPlan")}</option>)}
-          </select>
+          </Select>
         </label>
       )}
       {offerFolder && (

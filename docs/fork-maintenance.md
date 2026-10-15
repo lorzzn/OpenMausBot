@@ -11,19 +11,19 @@
 | 定制分支 | `feature/zpmodified` |
 | 自有远端 `origin` | `git@github.com:lorzzn/OpenMausBot.git` |
 | 官方远端 `upstream` | `https://github.com/milind-soni/OpenMausBot.git` |
-| 合并前的定制分支提交 | `9ccb68af06d71b4426193d9eb260b6b69cee9707` |
-| 上次合并提交 | `d7fe6688204be1aba364c57576f835505db14494`，0.1.108 |
-| 上次纳入的上游提交 | `a2b2b1b723539c0506766067c6cbd6989c189e12` |
-| 本次纳入的上游提交 | `c2cf30127c9fb6fb506be533f361214f764c01da` |
+| 合并前的定制分支提交 | `6831db27819f3bc4bbe8ef1133a0d1bf568a1999` |
+| 上次合并提交 | `b847b3ff0150b7a89823bf6b046a7f519cbe1b56`，0.1.111 |
+| 上次纳入的上游提交 | `c2cf30127c9fb6fb506be533f361214f764c01da` |
+| 本次纳入的上游提交 | `de63346e9347abb51048ae74ef3121d125fd11d2` |
 | 本次源码版本 | `0.1.111` |
-| 本次源码合并提交 | `b847b3ff0150b7a89823bf6b046a7f519cbe1b56` |
+| 本次合并所在分支 | `feature/zpmodified`，以 `git log --first-parent --merges -1` 查看合并提交 |
 
-本次同步纳入 **583 个上游提交**（包括 merge），固定目标为上表完整 SHA。
-全部引擎的 Full Access、未设置权限时的 Full 默认值、主管创建 Bot 的权限均采用上游实现，删除 fork 的引擎白名单差异；显式保存为 Ask 的旧 Bot／thread 不自动提升。
-上游还新增聊天交互组件、命令行团队操作、可选的上下文／记忆与协作功能，并修复 Codex 启动并发、账号和额度提示、Antigravity 权限字段解析、浏览器清理与失联恢复。
+本次同步纳入 **204 个上游提交**（含 merge，105 个非合并提交），涉及 253 个上游文件，固定目标为上表完整 SHA。上游本轮没有提升版本号。
+新增多套 OpenAI 兼容接口、Cursor／Grok／Pi 与 Codex 异步提问卡片、浏览器上传和悬停、Claude Code 个人技能目录、浏览器通知、自部署更新提示及官方 My Cloud 的 Files 页面，并修复模型刷新、聊天排序和工具失败状态。
+全部引擎的 Full Access 继续使用上游实现；流式显示、按需安装 Cursor、套餐用量、独立 Codex 设备码账号和 Docker 部署定制继续保留。
 
-最近一次上游同步见第 16 节，最新账号功能及两端发布见第 17 节。第 10—16 节保留相应历史记录。
-本机和 50 当前均运行 0.1.111，制品来自 `db97b8293`；部署记录的后续文档提交不改变镜像内源码。
+最近一次上游同步见第 18 节，最新账号功能及两端发布见第 17 节。第 10—17 节保留相应历史记录。
+第 17 节记录的本机和 50 部署均为 0.1.111，制品来自 `db97b8293`。**本次只同步代码，没有重新部署；源码分支领先于已部署制品。**
 
 ## 2. 必须保留的定制
 
@@ -34,6 +34,7 @@
 | 上游统一 Full Access | `shared/approval-mode.ts`、ACP／Pi 驱动、`server/runtime/capabilities.test.ts` | 0.1.111 已涵盖 Kimi、Droid、Hermes、Pi、Custom ACP；不恢复 fork 的引擎白名单或旧授权桥接；真实用户问题仍需回答 |
 | Cursor 面板安装／登录／更新 | `server/drivers/cursor-{auth,install,release}.ts`、`server/drivers/acp/cursor.ts`、`server/harness/registry.ts`、`CursorSignIn.tsx`、`EngineSetup.tsx` | 按需安装，网页完成官方登录，检测版本并原生更新；优先使用实例 HOME 内安装的 CLI，不依赖镜像预装 |
 | Cursor／Antigravity 套餐用量 | `server/plan-usage.ts`、`PlanUsage.tsx`、相关 fixture | 显示提供方返回的窗口、月度额度、模型池和重置时间；不可获取时显示真实状态，不编造额度 |
+| ChatGPT 账号类型 | `shared/codex-account.ts`、`server/drivers/codex-account.ts`、`server/routes/instances.ts`、`EngineAccounts.tsx` | 添加账号时明确选择“Codex 设备码登录”或“ChatGPT plan”；登录、运行、模型、用量、退出使用同一账号目录，不自动切换认证流程 |
 | VM 查看地址 | `server/local-vm-viewer.ts`、`server/routes/computers.ts`、查看器路由 | 浏览器使用当前访问源／代理信息生成地址；局域网、Tunnel、宿主机 HTTPS 都不跳到客户端的 `127.0.0.1` |
 | 单端口 HTTP 部署 | `compose.yaml`、`server/index.ts` | Docker 直连应用 8799；应用自身处理 `/hooks/` 和经过认证的桌面查看器，不依赖 Caddy 容器 |
 | HTTP UUID 兼容 | `src/lib/crypto-compat.ts`、`src/main.tsx` | 非安全 HTTP 源缺少 `crypto.randomUUID` 时使用 `getRandomValues`；HTTPS 的原生实现保持原样 |
@@ -61,7 +62,8 @@ CLI 和身份信息保存在容器的持久 HOME `/data`，更新镜像不应把
 实例显式设置 CLI 路径时应尊重该路径；默认情况优先使用 `/data/.local` 下的安装。
 详情参见 [Cursor 文档](cursor.md)。
 
-本次纳入上游的 ACP 模型与推理强度映射修复。`--model` 参数本身不能证明 ACP 实际用了该模型；需要检查 session 模型选择、提示信息和相关 fake CLI 测试。
+`--model` 参数本身不能证明 ACP 实际用了该模型；需要检查 session 模型选择、提示信息和相关 fake CLI 测试。
+已知问题：当前旧式 ACP 变体匹配可能把非 Fast 的 Grok High 替换成 Fast。2026-10-14 版 Cursor 的参数化 ACP 接口已在隔离会话中确认接受 `reasoning_effort=high` 和 `fast=false`；本次上游合并未改变这段模型选择逻辑，修复仍需单独实现，不能把提问卡片支持当作模型参数修复。
 
 ## 3. 当前部署在哪里
 
@@ -765,3 +767,38 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 - 50 已删除被替换的旧应用镜像、制品归档、源码 bundle、验证脚本和临时构建目录，没有制作用户数据备份。本机保留 `openmausbot-vm:before-codex-accounts-20261015`。没有复制两端的用户数据或账号，没有执行真实 OpenAI 登录、邮箱验证或付费推理。
 
 证据目录为 `.omb-scratch/codex-accounts-20261015/`，包括两端 receipt、`tests.log`、`push.log`、各构建／部署日志、`packaged.log`、`native-and-artifacts.json`、`image-smoke.json` 和 `cleanup-50.log`。50 的 `.omb-scratch/deployment-receipt.json` 仅保存不含凭据或用户内容的运维回执。
+
+## 18. 2026-10-15 再次同步上游（仅源码）
+
+| 项目 | 值 |
+| --- | --- |
+| 合并前 fork | `6831db27819f3bc4bbe8ef1133a0d1bf568a1999` |
+| 共同基线 | `c2cf30127c9fb6fb506be533f361214f764c01da` |
+| 固定上游目标 | `de63346e9347abb51048ae74ef3121d125fd11d2` |
+| 新增上游范围 | 204 个提交，105 个非合并提交，253 个文件 |
+| 分支 | `feature/zpmodified` |
+| 本机代码恢复分支 | `safety/before-upstream-20261015-de63346e9` |
+| 源码版本 | 0.1.111，上游本轮未提升版本号 |
+
+### 合并内容与定制保留
+
+- 接入上游多套 OpenAI 兼容接口管理、原生提问卡片、浏览器上传／悬停、模型列表刷新、聊天排序、工具失败纠错配置、通知、自部署版本提示和 Claude Code 个人技能目录。
+- 上游 Files 是桌面与官方 My Cloud 的文件共享：电脑文件单向上传为云端只读副本，Bot 产物单向下载。当前独立 Docker 服务没有因此新增 Google Drive／OneDrive 接口，现有 `/mnt` 与 rclone 配置挂载仍按第 3 节维护。
+- 保留文字／reasoning 流式缓冲和结束清理；代码块同时支持流式阶段延迟高亮与上游的 fence 换行指令。
+- 保留 Cursor 面板按需安装、登录、更新及实例 HOME 解析，Cursor／Antigravity 套餐用量，以及第 17 节的两种账号认证与独立 `CODEX_HOME`。
+- 保留 HTTP、Tunnel、两种可选 Caddy HTTPS、VM、宿主机文件与 rclone 配置 overlay；没有修改实际部署配置或数据卷。
+- Full Access 继续使用上游统一实现。Cursor 的非 Fast 被替换问题仍是第 2 节所述待修问题，本次没有顺带改变模型选择行为。
+
+### 冲突与检查说明
+
+- 六个冲突文件：`ChatMarkdown.tsx` 合并流式与换行；`cursor.test.ts` 和 `codex.ts` 保留双方导入与测试；`zh.json`、`source-hashes.json` 逐键三方合并；`file-size-ratchet.test.ts` 根据合并结果重新计数，所有原有大文件的行数上限均未增加。
+- 上游新增土耳其语、越南语。两种语言的套餐说明及空账号文案已同步本分支的 Cursor／Antigravity 语义，并更新对应英文源哈希。翻译检查通过：12 个语言包、4542 条英文源字符串。
+- Node.js 24.21.0；lint、typecheck、Electron 183 个模块语法检查、server/UI 构建、流式浏览器 fixture 与四种 Compose 配置解析通过。
+- 首轮 90 个回归文件中 89 个通过：2826 项通过、1 项跳过，唯一失败是上游新下拉框规范检查发现账号类型表单仍使用原生 `select`。表单已改用共享 `Select`，保留原有类型与提交行为；修正后规范、账号交互、引擎设置三个文件的 30 项测试全部通过。
+- 六个隔离 API／端到端文件：57 项通过、2 项按 Linux 平台跳过；涵盖显式账号类型、网页 Full Access、配置工作流、取消、Local VM 与 Files。Electron 文件同步模块的 44 项 Node 测试通过。
+- 打包 smoke 在仓库及 `node_modules` 外启动临时服务，通过 13 个代理入口、MCP、headless CLI、导出 worker、容器 launcher、compile cache 与 enterprise 层发现。
+- 供应商 Windows 补丁保留上游原始字节；其统一 diff 空上下文行含必要的空格，空白检查排除该补丁，其余暂存文件执行 `git diff --cached --check`。
+
+验证日志位于被忽略的 `.omb-scratch/upstream-sync-20261015-de63346e9/`。所有 API、账号、对话及浏览器验证使用临时 HOME／数据与模拟引擎。
+
+**本次只同步源码，没有部署或重新构建运行中的镜像。** 本机和 50 的最后部署记录仍是第 17 节的 `db97b8293` 制品；后续部署应从本次合并后的 fork 完整 SHA 重新构建，并更新镜像中的 `/app/package.json` 与 `deployment-manifest.json`，不能仅因版本号仍是 0.1.111 就复用旧应用制品。

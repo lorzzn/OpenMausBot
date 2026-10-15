@@ -21,6 +21,7 @@ vi.mock("@/state/store", async (original) => ({
 }));
 const { DeviceSignIn } = await import("./DeviceSignIn");
 const { AddAccount } = await import("./EngineAccounts");
+const { Select } = await import("./Select");
 
 type Node = ReactElement<{ children?: ReactNode; onClick?: () => Promise<void> }>;
 function nodes(tree: ReactNode): Node[] {
@@ -105,7 +106,7 @@ it.each(["device-code", "chatgpt-plan"])("submits the selected account type with
   draw().find((node) => node.type === "button")!.props.onClick!();
   const input = draw().find((node) => node.type === "input") as ReactElement<{ onChange: (event: { target: { value: string } }) => void }>;
   input.props.onChange({ target: { value: " Work " } });
-  const select = draw().find((node) => node.type === "select") as ReactElement<{ value: string; onChange: (event: { target: { value: string } }) => void }>;
+  const select = draw().find((node) => node.type === Select) as ReactElement<{ value: string; onChange: (event: { target: { value: string } }) => void }>;
   expect(select.props.value).toBe("device-code");
   expect(draw().filter((node) => node.type === "option").map((node) => node.props.children)).toEqual(["Codex 设备码登录", "ChatGPT plan"]);
   select.props.onChange({ target: { value: mode } });
@@ -114,7 +115,7 @@ it.each(["device-code", "chatgpt-plan"])("submits the selected account type with
   form.props.onSubmit({ preventDefault: () => {} });
   await flush();
   expect(fixture.api).toHaveBeenCalledExactlyOnceWith(props.endpoint, { method: "POST", body: JSON.stringify({ displayName: "Work", authMode: mode }) });
-  expect(draw().find((node) => node.type === "select")!.props).toMatchObject({ value: mode });
+  expect(draw().find((node) => node.type === Select)!.props).toMatchObject({ value: mode });
   expect(draw().find((node) => node.props.children === "Sign-in refused")).toBeDefined();
   expect(props.onAdded).not.toHaveBeenCalled();
 });
