@@ -7,10 +7,9 @@ const INDEX = readFileSync(new URL("../../server/index.ts", import.meta.url), "u
 
 const EXACT: Record<string, number> = {
   // Internal harness routes have no server/routes module yet; moving them out is the follow-up that lowers this.
-  // Route extraction lowers these counts. The fork retains /hooks/ on the app
-  // port; VM viewer authorization now lives in server/routes/computers.ts.
-  'path === "/': 113,
-  "path.match(": 30,
+  // The app port also serves /hooks/ for direct HTTP and Tunnel deployments.
+  'path === "/': 111,
+  "path.match(": 29,
   "path.startsWith(": 11,
   ".exec(path)": 8,
   ".test(path)": 0,

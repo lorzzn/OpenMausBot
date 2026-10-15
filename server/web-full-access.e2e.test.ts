@@ -71,6 +71,7 @@ describe("upstream web Full access on an isolated server", () => {
 
   it("grants one thread or all threads and can return them to Ask", async () => {
     const path = `/api/bots/${botId}`;
+    expect((await admin("PATCH", path, { approvalMode: "ask", applyToAllThreads: true })).status).toBe(200);
     expect((await admin("PATCH", `${path}/tasks/${firstThread}`, { approvalMode: "full" })).status).toBe(200);
     let current = await bot();
     expect(current.approvalMode).toBe("ask");

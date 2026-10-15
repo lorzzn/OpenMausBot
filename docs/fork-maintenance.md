@@ -1,7 +1,7 @@
 # 定制分支维护、上游同步与部署交接
 
 这份文档供维护本项目的人和后续编码代理使用。它记录本仓库的定制、两套现有部署、同步步骤与验证方法。
-涉及运行状态的记录截至 **2026-10-13（北京时间）**；操作前应重新读取容器标签、端口和 Git 状态，不能把这份快照当成实时状态。
+涉及运行状态的记录截至 **2026-10-15（北京时间）**；操作前应重新读取容器标签、端口和 Git 状态，不能把这份快照当成实时状态。
 
 ## 1. 仓库与本次同步基线
 
@@ -11,20 +11,18 @@
 | 定制分支 | `feature/zpmodified` |
 | 自有远端 `origin` | `git@github.com:lorzzn/OpenMausBot.git` |
 | 官方远端 `upstream` | `https://github.com/milind-soni/OpenMausBot.git` |
-| 合并前的定制分支提交 | `f19ea3685bbeaeae5ffe855ee8648c95eb909610` |
-| 上次合并提交 | `5316184f8`，0.1.107 |
-| 上次纳入的上游提交 | `295f947dac548af954d0f792b8631269bb423fd0` |
-| 本次纳入的上游提交 | `a2b2b1b723539c0506766067c6cbd6989c189e12` |
-| 本次源码版本 | `0.1.108` |
-| 本次源码合并提交 | `d7fe6688204be1aba364c57576f835505db14494` |
+| 合并前的定制分支提交 | `9ccb68af06d71b4426193d9eb260b6b69cee9707` |
+| 上次合并提交 | `d7fe6688204be1aba364c57576f835505db14494`，0.1.108 |
+| 上次纳入的上游提交 | `a2b2b1b723539c0506766067c6cbd6989c189e12` |
+| 本次纳入的上游提交 | `c2cf30127c9fb6fb506be533f361214f764c01da` |
+| 本次源码版本 | `0.1.111` |
 
-本次同步纳入 **214 个上游提交**（包括 merge），固定目标为上表完整 SHA。
-采用上游网页 Full Access 的统一 API／界面流程，移除旧的配对管理员专用桥接；保留额外引擎适配、网页流式和其他定制。
-上游完成更多任务运行路径迁移、新增团队批量设置、上下文余量提醒、浏览器登录管理、启动例行任务、Meta／Muse 引擎，并把主要 HTTP 路由拆到 `server/routes/`。
-合并时必须把 fork 补丁迁移到路由的新位置，不能在 `index.ts` 恢复已被拆出的旧处理器。
+本次同步纳入 **583 个上游提交**（包括 merge），固定目标为上表完整 SHA。
+全部引擎的 Full Access、未设置权限时的 Full 默认值、主管创建 Bot 的权限均采用上游实现，删除 fork 的引擎白名单差异；显式保存为 Ask 的旧 Bot／thread 不自动提升。
+上游还新增聊天交互组件、命令行团队操作、可选的上下文／记忆与协作功能，并修复 Codex 启动并发、账号和额度提示、Antigravity 权限字段解析、浏览器清理与失联恢复。
 
-本次源码合并提交已推送到 `origin/feature/zpmodified`，**本机和 50 均已完成 0.1.108 部署**，见第 3 节和第 13 节。
-随后维护／部署记录的文档提交不改变运行制品；镜像内源码仍指向 `d7fe66882`。第 10—12 节是历史发布快照。
+源码同步和此次两端发布记录见第 16 节。第 10—15 节为历史记录。
+下面部署表在切换前仍记录 0.1.108；只有核对实际容器制品后才更新部署版本，不能将源码合并等同于已发布。
 
 ## 2. 必须保留的定制
 
@@ -32,13 +30,13 @@
 | --- | --- | --- |
 | 网页流式显示 | `src/state/streaming.ts`、`src/state/store.tsx`、`src/components/StreamingReply.tsx`、`ChatView.tsx`、`GroupView.tsx` | 按 thread 订阅文本和 reasoning；完成时清空缓冲；切换聊天、后台页面和暂停 rAF 时不丢尾部、不重复回复 |
 | 流式代码块渲染 | `src/components/ChatMarkdown.tsx` | 流式阶段延迟高亮；同时采用上游的超大代码块纯文本策略、公式按需加载和附件渲染 |
-| 额外引擎 Full Access | `shared/approval-mode.ts`、ACP／Pi 驱动、`server/runtime/capabilities.test.ts` | 使用上游统一网页/API 流程；保留 Kimi、Droid、Hermes、Pi、Custom ACP 的 Full 支持；用户问题仍需回答 |
+| 上游统一 Full Access | `shared/approval-mode.ts`、ACP／Pi 驱动、`server/runtime/capabilities.test.ts` | 0.1.111 已涵盖 Kimi、Droid、Hermes、Pi、Custom ACP；不恢复 fork 的引擎白名单或旧授权桥接；真实用户问题仍需回答 |
 | Cursor 面板安装／登录／更新 | `server/drivers/cursor-{auth,install,release}.ts`、`server/drivers/acp/cursor.ts`、`server/harness/registry.ts`、`CursorSignIn.tsx`、`EngineSetup.tsx` | 按需安装，网页完成官方登录，检测版本并原生更新；优先使用实例 HOME 内安装的 CLI，不依赖镜像预装 |
 | Cursor／Antigravity 套餐用量 | `server/plan-usage.ts`、`PlanUsage.tsx`、相关 fixture | 显示提供方返回的窗口、月度额度、模型池和重置时间；不可获取时显示真实状态，不编造额度 |
 | VM 查看地址 | `server/local-vm-viewer.ts`、`server/routes/computers.ts`、查看器路由 | 浏览器使用当前访问源／代理信息生成地址；局域网、Tunnel、宿主机 HTTPS 都不跳到客户端的 `127.0.0.1` |
 | 单端口 HTTP 部署 | `compose.yaml`、`server/index.ts` | Docker 直连应用 8799；应用自身处理 `/hooks/` 和经过认证的桌面查看器，不依赖 Caddy 容器 |
 | HTTP UUID 兼容 | `src/lib/crypto-compat.ts`、`src/main.tsx` | 非安全 HTTP 源缺少 `crypto.randomUUID` 时使用 `getRandomValues`；HTTPS 的原生实现保持原样 |
-| 大工具输出的聊天投影 | `server/tool-title.ts`、`server/index.ts`、`server/store.ts` | 工具标题显示上限 2048 字符，公开聊天投影不携带庞大原始字段；避免含大量图片／长命令的聊天一次传输数百万字符 |
+| 大工具输出的聊天投影 | `server/tool-title.ts`、`server/host/message-pages.ts`、`server/index.ts`、`server/store.ts` | 工具标题显示上限 2048 字符，公开聊天投影不携带庞大原始字段；避免含大量图片／长命令的聊天一次传输数百万字符 |
 | 可选宿主机文件挂载 | `compose.mnt.yaml` | `/mnt` 以读写方式提供给应用，使用 `rslave` 传播后续挂载；不自动提供给 Local VM 桌面 |
 | 应用目录内的 CLI 更新 | `server/drivers/cli-update-command.ts`、`server/engine-install.ts`、`server/routes/instances.ts` | Claude 等 npm 安装的引擎更新应用实际使用的副本，避免更新到另一个全局 prefix |
 
@@ -50,6 +48,8 @@
 - `OMB_PAIRED_WEB_FULL_ACCESS`、`pairedWebApprovals`、`/paired-full-access` 和旧确认 UI 已移除。升级时删除 `.env` 里的旧开关。不要在后续合并中把它们恢复。
 - `server/web-full-access.e2e.test.ts` 验证新流程及原有身份／跨源／会话 scope 检查。Full 不取消登录，也不会批量修改每个已有 Bot 的设置。
 - Bot、thread 和新 Bot 的预设各有自己的设置。修改预设不等于修改所有旧 Bot。
+- **从 0.1.111 起，未设置权限的 Bot／thread 默认 Full**，主管创建的新 Bot 也使用该默认值；显式保存为 Ask／Auto／Edits／Custom 的设置继续生效，托管公司工作区按上游 operator policy。
+- Full 在已授权的连接应用中发送邮件／消息时也不再弹 outbound 批准卡；应用 scope 与工具授权仍检查。可选 safety floor 默认关闭，不在此次部署中擅自开启。
 - 新任务运行机制会计算主管与目标 Bot 的有效权限，并限制权限继承的来源。外部请求不应被当成人的 Full Access 授权。
 - 新增引擎时，同时核对 `shared/approval-mode.ts`、驱动权限处理和 `server/runtime/capabilities.test.ts`。不能只改能力声明。
 
@@ -232,7 +232,7 @@ git diff --name-only --diff-filter=U
 - **流式与 Markdown**：保留文本／reasoning 的 thread 订阅和完成清理，同时接入新的附件、回复操作、未读状态、性能限制和懒加载插件。
 - **Cursor 安装与检测**：同时保留上游的安装失败原因与本分支的实际 CLI 解析；检测和运行必须使用同一个实例 HOME 下的可执行文件。
 - **安装结果**：“请求成功”不足以显示“已安装”；保留上游对返回引擎状态的验证，也要保留 Cursor 原生安装／更新入口。
-- **任务权限**：运行时能力测试要体现本分支的 Full Access。保持未知引擎拒绝提升权限、外部请求不继承主管授权、Auto 仍要求原生审核器的测试。
+- **任务权限**：运行时能力测试要体现本分支的 Full Access。从 0.1.111 起采用上游所有引擎支持 Full 的统一契约；保持外部请求不继承主管授权、Auto 仍要求原生审核器的测试，不恢复已移除的 Full 白名单。
 - **验证 launcher**：新增位置参数后核对所有调用者，尤其是网页静态目录与本分支的隔离配对管理员测试参数，避免把 boolean 当成路径。
 - **路由计数 gate**：核对应用端口的 `/hooks/` 和新电脑路由中的 VM 授权；旧配对 Full Access 路由不再保留。上游移走旧路由时降低对应计数；不要删测试、放宽成任意计数。
 - **翻译**：按 JSON 键进行三方合并，保留新增字段。英文变化后同步审阅译文与 `source-hashes.json`；不要只接受哈希却不读译文。
@@ -651,3 +651,39 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 
 宿主机 Caddy 配置哈希保持不变，Caddy 与三个 rclone 服务均 active/enabled。未备份用户数据、未创建或保留额外应用镜像；临时 Git bundle 已清理。
 只读核对结果存放在本机 `.omb-scratch/rclone-config-50-20261013/verify.log`，以及 50 的 `.omb-scratch/rclone-config-50-20261013-receipt.json`；这些文件仅记录部署状态，不含凭据或用户文件内容。
+
+
+## 16. 0.1.111 同步（2026-10-15）
+
+### 合并与兼容
+
+上游固定为 `c2cf30127c9fb6fb506be533f361214f764c01da`，从 0.1.108 基线纳入 583 个提交；共处理 27 个文件的文本冲突。
+
+- Full Access 采用上游默认和全引擎能力，不再维护额外引擎列表；保留 fork 的权限回归测试。新默认不覆盖已有显式 Ask，也不会取消登录、scope 和真实问题卡。
+- 流式文本和 reasoning 的 thread 独立订阅、后台 rAF 排空、完成清理继续保留；临时流式气泡接入上游新增的聊天宽度和 `@you` 显示。
+- Cursor 浏览器登录、按需安装、原生更新和检测保留；适配上游统一账号卡片与安静更新按钮。共享 CLI 的更新互斥使用同一份繁忙任务检查。
+- 公开聊天投影移到上游新抽出的 `server/host/message-pages.ts`，避免分页／SSE 重新带上大工具字段。工具桥接后的标题仍执行脱敏和 2048 字符上限；运行时事件继续移除精确命令与原始大字段。
+- VM 访问地址、查看器认证、单端口 webhook 保留；测试随上游改用 `OMB_BOAT_API`。Codex 新并发、退出等待与登录恢复逻辑保留，同时继续使用 fork 的实际 CLI 更新命令。
+- 源文件行数基线按合并后的较小文件重新计量，没有提高原 fork 的任何大文件上限。路由基线采用上游拆分后的数量，仅保留应用端口 `/hooks/` 的额外 startsWith。
+- 基础 Compose 纳入上游浏览器要求的 `shm_size: 512m`，继续使用 `init: true`。本机基础+VM+Tunnel+mnt+rclone、50 基础+VM+mnt+rclone，端口与网关保持现有约定。
+- Antigravity 继续采用谷歌官方 ACP 的接口和模型列表，不切换个人账号端点、不修改官方模型筛选。
+
+### 验证与发布
+
+证据目录为 `.omb-scratch/upstream-sync-20261015/`。
+
+| 检查 | 结果 |
+| --- | --- |
+| 核心驱动、权限、Cursor 安装登录更新、套餐用量、流式、viewer、代码规模／路由 gate | 20 文件，247 项通过 |
+| HTTP、Store、Full 默认、网页会话／权限边界、Codex、Group VM、引擎／Markdown／用量组件 | 15 文件；首次 889 通过、2 条件跳过、1 旧假设失败；显式设定 Ask 基线后重跑网页 4 项通过 |
+| 修正与投影回归 | 4 文件，9 项通过；包括新抽出的分页／SSE helper 限制旧长标题并移除 screen pixels，不修改原始历史 |
+| 浏览器流式 | 1 项通过；暂停 rAF 时 text/reasoning 完整，最终回复无重复，console 无 error |
+| 静态检查 | Node 24 typecheck、lint、4457 条英文源字符串的翻译检查通过；165 个 Electron 模块语法通过 |
+| 构建 | 清空 server/UI 输出后重新构建，通过；Linux x64 DuckDB、resvg、1Password 原生／WASM 资源准备通过 |
+| 独立 packaged smoke | 仓库与 node_modules 外启动、13 个 proxy、MCP、headless doctor/bots、隔离加密导出 worker、launcher、桌面 compile cache 与 enterprise 发现通过 |
+| Compose | 本机完整组合、50 组合、域名 HTTPS、IP HTTPS 配置解析通过 |
+
+网页测试现在在测试单线程设置前显式把 fixture 的 Bot 与所有 thread 设为 Ask，避免前面场景已写入的 Full 影响断言；产品仍使用上游默认值，没有修改生产用户的权限来让测试通过。
+
+没有运行完整跨平台测试集、真实付费引擎或真实邮箱验证码。创建 Bot、改权限、发消息、导出和浏览器操作均只在隔离 HOME／数据目录进行。
+源码和制品验证通过后按第 8 节发布两端；实际镜像 ID、源码 SHA、挂载和健康结果在发布后追加，未发布时不能以本段代替运行证据。
