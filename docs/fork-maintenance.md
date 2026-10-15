@@ -11,18 +11,18 @@
 | 定制分支 | `feature/zpmodified` |
 | 自有远端 `origin` | `git@github.com:lorzzn/OpenMausBot.git` |
 | 官方远端 `upstream` | `https://github.com/milind-soni/OpenMausBot.git` |
-| 合并前的定制分支提交 | `6831db27819f3bc4bbe8ef1133a0d1bf568a1999` |
-| 上次合并提交 | `b847b3ff0150b7a89823bf6b046a7f519cbe1b56`，0.1.111 |
-| 上次纳入的上游提交 | `c2cf30127c9fb6fb506be533f361214f764c01da` |
-| 本次纳入的上游提交 | `de63346e9347abb51048ae74ef3121d125fd11d2` |
+| 合并前的定制分支提交 | `945cda8c5df55ff21f5acb856a72c5a5cec33a4f` |
+| 上次合并提交 | `313cfb447c6beeed16ee7e0e3212f37fa61b8f22`，0.1.111 |
+| 上次纳入的上游提交 | `de63346e9347abb51048ae74ef3121d125fd11d2` |
+| 本次纳入的上游提交 | `2c98018a4e2eed4c5f1634f2610087428a7f0dd2` |
 | 本次源码版本 | `0.1.111` |
 | 本次合并所在分支 | `feature/zpmodified`，以 `git log --first-parent --merges -1` 查看合并提交 |
 
-本次同步纳入 **204 个上游提交**（含 merge，105 个非合并提交），涉及 253 个上游文件，固定目标为上表完整 SHA。上游本轮没有提升版本号。
-新增多套 OpenAI 兼容接口、Cursor／Grok／Pi 与 Codex 异步提问卡片、浏览器上传和悬停、Claude Code 个人技能目录、浏览器通知、自部署更新提示及官方 My Cloud 的 Files 页面，并修复模型刷新、聊天排序和工具失败状态。
+本次同步纳入 **22 个上游提交**（含 merge，15 个非合并提交），涉及 79 个上游文件，固定目标为上表完整 SHA。上游本轮没有提升版本号。
+新增原生 HighLevel CRM 连接和按 Bot 授权、用户消息渐变配色，修复官方 Composio 代理的自定义认证配置，以及测试清单和 Windows 诊断／Files／群聊夹具问题。
 全部引擎的 Full Access 继续使用上游实现；流式显示、按需安装 Cursor、套餐用量、独立 Codex 设备码账号和 Docker 部署定制继续保留。
 
-最近一次上游同步见第 18 节，账号功能见第 17 节，Cursor 参数适配及最新两端发布见第 19 节。第 10—18 节保留相应历史记录。
+最近一次上游同步见第 20 节，账号功能见第 17 节，Cursor 参数适配及已完成的两端发布见第 19 节。第 10—19 节保留相应历史记录。
 本机和 50 均已部署 0.1.111，制品来自 `2dce5fc0d524a367b3f9fea398b4b33d9ff07a6a`，包含第 18 节的上游同步与第 19 节的 Cursor 修复。后续仅更新部署文档的提交不改变镜像内的制品源码 SHA。
 
 ## 2. 必须保留的定制
@@ -851,3 +851,32 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 - 未发送邮箱验证码、生成生产配对码或发起真实付费模型推理。Cursor 参数协议的证据来自前述隔离测试；部署检查证明制品、入口、容器、挂载与 VM 连接，不扩大为实际模型推理结果的证明。
 
 发布证据位于 `.omb-scratch/cursor-parameters-deploy-20261015/`，包括两端 receipt、`push.log`、构建／部署日志、两端原生模块与文件校验、`image-smoke.json`、`cleanup-50-final.log`。50 仅保留不含凭据或用户内容的 `.omb-scratch/deployment-receipt.json` 运维回执。
+
+## 20. HighLevel 与消息配色同步（2026-10-15）
+
+| 项目 | 值 |
+| --- | --- |
+| 合并前 fork | `945cda8c5df55ff21f5acb856a72c5a5cec33a4f` |
+| 上次上游基线 | `de63346e9347abb51048ae74ef3121d125fd11d2` |
+| 本轮固定上游目标 | `2c98018a4e2eed4c5f1634f2610087428a7f0dd2` |
+| 上游新增范围 | 22 个提交，15 个非合并提交，79 个文件 |
+| 版本 | 0.1.111，依赖清单与锁文件未变 |
+| 本机恢复分支 | `safety/before-upstream-20261015-2c98018a4` |
+
+### 合并与收敛
+
+- 纳入原生 HighLevel 连接卡片、OAuth／Private Integration token、20 项 CRM 工具及按 Bot 授权；当前工具不发送消息、不修改预约、不处理支付。OAuth 默认使用上游的 accounts relay；本轮 Docker 发布不部署 Cloudflare Worker，也不验证真实 CRM 账号。
+- 纳入单聊用户消息的 Bot 色渐变、对比度与默认开启设置；显式关闭和群聊的原有行为保留。
+- 纳入官方 Composio broker 自定义认证配置，以及最新的清单测试、Windows crash log／Files／room session 修正。
+- 保留 Cursor 参数化 ACP 设置、按需安装／登录／更新、套餐用量、独立 Codex 设备码账号、文字／reasoning 流式，以及现有 Docker／VM／网盘挂载。
+- 唯一文本冲突是文件行数基线。连接应用的四个读取路由移至 `server/routes/connector-read.ts`；引擎信息类型移至 `src/state/instance-info.ts`，保留原导出；应用图标组件移至 `src/components/ServiceIcon.tsx`，保留原入口与行为。
+- 所有已有大文件上限均未增加：index 17711 → 17690，前端 store 3648 → 3587，PluginsPanel 1111 → 1091，Claude 2169 → 2168，Codex 1836 → 1834；index 的精确路由判断计数 111 → 107。
+- 上游新 OAuth 测试发现 state 文本别名：更改 Base64URL 末尾的未使用位可能仍解码为相同字节。HighLevel relay 的 HKDF 输入改用完整 state 文本，保留原有错误 state 拒绝断言，并新增确定性回归。这只涉及本轮新增的 HighLevel relay，不迁移已有应用账号或其他认证数据。
+
+### 发布顺序与证据
+
+本轮按用户要求先部署，再完成正式合并提交。构建前冻结暂存源码树，并固定待提交对象的树、两个父提交、消息及作者／提交时间；分支在部署通过前保持原 HEAD。镜像中的 `deployment-manifest.json` 记录该完整源码对象 SHA 和源码树 SHA，构建及切换前核对暂存树与工作文件没有变化。部署通过后使用相同元数据完成提交并核对对象 SHA，再推送与同步 50 的源码工作树。
+
+发布继续使用同一份编译制品覆盖固定基础运行时。现有完整 Compose 组合、数据卷、端口、512 MiB 共享内存、专用 VM socket、`/mnt` RW/rslave 与 rclone 目录绑定必须保留；50 不制作数据备份、不保留旧应用镜像或上传归档。
+
+本轮验证与发布日志位于被忽略的 `.omb-scratch/upstream-sync-20261015-2c98018a4/`。最终两端制品与检查结果在部署完成后追加。
