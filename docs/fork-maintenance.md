@@ -22,8 +22,8 @@
 全部引擎的 Full Access、未设置权限时的 Full 默认值、主管创建 Bot 的权限均采用上游实现，删除 fork 的引擎白名单差异；显式保存为 Ask 的旧 Bot／thread 不自动提升。
 上游还新增聊天交互组件、命令行团队操作、可选的上下文／记忆与协作功能，并修复 Codex 启动并发、账号和额度提示、Antigravity 权限字段解析、浏览器清理与失联恢复。
 
-源码同步和此次两端发布记录见第 16 节。第 10—15 节为历史记录。
-本机和 50 已完成 0.1.111 发布；运行制品来自 `b847b3ff0`，随后文档提交不改变镜像内源码。
+最近一次上游同步见第 16 节，最新账号功能及两端发布见第 17 节。第 10—16 节保留相应历史记录。
+本机和 50 当前均运行 0.1.111，制品来自 `db97b8293`；部署记录的后续文档提交不改变镜像内源码。
 
 ## 2. 必须保留的定制
 
@@ -71,7 +71,7 @@ CLI 和身份信息保存在容器的持久 HOME `/data`，更新镜像不应把
 | --- | --- | --- |
 | 主机 | 当前开发电脑 | `108.186.129.50` |
 | 源码目录 | `/home/zhipeng/codes/OpenMausBot` | `/opt/OpenMausBot` |
-| 运行制品的源码 HEAD | `b847b3ff0` | `b847b3ff0`，同一份编译制品 |
+| 运行制品的源码 HEAD | `db97b8293` | `db97b8293`，同一份编译制品 |
 | 核对时应用版本 | `0.1.111` | `0.1.111` |
 | 对外地址 | `https://omb.oomdev.de5.net/` | `https://ombus.oomdev.de5.net/` |
 | Docker 主机端口 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
@@ -722,7 +722,7 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 
 ## 17. 新增 ChatGPT 账号时选择认证类型
 
-本节记录第 16 节发布之后的源码改动；不代表已更新本机或 50 的运行容器。
+本节对应源码提交 `db97b82937a94f66e3cf2edc7aee86bf74741cf2`，已部署到本机和 50。功能及部署检查分别记录如下。
 
 上游已支持 ChatGPT plan 多账号和 Codex 设备码登录；本次接通的是“添加另一个 ChatGPT 账号”表单中的类型选择。
 
@@ -738,4 +738,30 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 - 这些目录位于已有备份排除的 `providers/` 中；不上传、迁移或互相复制真实凭据。独立账号目录不会扩大 Codex 或 ChatGPT plan 的模型授权范围。
 - 配置解码与套餐账号列表构造分别抽出到 `codex-config.ts`、`plan-usage-accounts.ts`，大文件行数上限只下调。
 
-验证方法见 [引擎认证检查](verification/engines.md#chatgpt-account-sign-in-types)。测试仅使用临时服务和模拟 CLI；真实 OpenAI 登录及生产容器部署不在本次验证范围内。
+验证方法见 [引擎认证检查](verification/engines.md#chatgpt-account-sign-in-types)。功能测试仅使用临时服务和模拟 CLI，不证明真实 OpenAI 授权或账号模型访问。
+
+### 两端部署结果（2026-10-15）
+
+账号表单仅保留“Codex 设备码登录”和“ChatGPT plan”两个选项；按用户要求移除了 `accounts.chatgptPlanLocalHint` 的界面、翻译与源哈希条目。
+源码提交已推送至 `origin/feature/zpmodified`。本次没有合并更多上游提交，纳入的上游仍为 `c2cf30127c9fb6fb506be533f361214f764c01da`。
+
+| 项目 | 本机 | 50 |
+| --- | --- | --- |
+| 应用版本／制品源码 | 0.1.111／`db97b8293` | 同左 |
+| 实际镜像 ID | `sha256:576aaf0d5c96089eb2866ee2c8b181be93c0c9ac09e83d2905871d743d7579de` | `sha256:2c30623f38ba8afab4a4b8a91ab1c67a390ca5d2563389e5d537b2290d68a60b` |
+| 发布标签 | `openmausbot-vm:0.1.111-db97b8293` | 同左 |
+| Compose | 基础 + VM + Tunnel + mnt + rclone | 基础 + VM + mnt + rclone |
+| HTTP 映射 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
+| 公网入口 | `https://omb.oomdev.de5.net` | `https://ombus.oomdev.de5.net` |
+| 状态 | healthy，RestartCount 0 | healthy，RestartCount 0 |
+
+- 删除提示后重新运行账号表单、隔离账号 API、套餐用量与大文件 gate：4 个文件、27 项通过。推送前 lint、typecheck、10 个语言包的翻译检查通过，英文源字符串为 4460 条。
+- 清空输出后重新构建 server/UI，并重新准备锁定版本的原生资源。独立 packaged smoke 在仓库与 node_modules 外验证启动、13 个代理入口、MCP、headless CLI、隔离导出 worker、launcher、compile cache 和 enterprise 模块发现。
+- 发布继续采用第 11 节的运行时制品覆盖方法。两端基础镜像仍为 `sha256:6474542e76e44ef73280a82dbd61600e5c243905beeb60c896710d3890a790c2`。`/app/package.json` 均为 0.1.111，`deployment-manifest.json` 记录本次完整源码 SHA、上游 SHA、构建时间与每个应用制品文件的哈希。
+- 同一份 **1282 个应用制品文件**在两端最终镜像中全部校验通过，聚合 SHA-256 为 `1ee88b8da38229015127bfc6c98653eb2fed14ff5c495fd16f640e08963fb76d`。两端的一次性无网络容器通过 DuckDB SQL、resvg PNG、1Password SDK 加载与 WASM 校验；本机最终镜像还以临时 HOME、无生产数据挂载独立启动并通过健康／网页检查。
+- 本机 loopback／Tunnel、50 loopback／宿主机 Caddy 四个入口的首页哈希均为 `8950f2f4e1b1cb076f01d0d1a42675759b464375ac62d225c4f2301b4aba0273`。编译后的前端 JS 已检查不含被删除的提示键。
+- 两端保留原数据卷、UID/GID 1000:1000、512 MiB 共享内存、`/mnt` RW/rslave 与 rclone 目录 RW 绑定；专用 VM daemon 29.8.1 的 socket 连接通过。应用 UID 可读两个网盘目录及配置；本机已有 rclone 的 `listremotes` 通过，50 仍只挂配置、没有安装 rclone 程序。
+- 50 使用原有 `/usr/local/bin/omb-compose` 快进更新，未改变宿主机 Caddy 配置；其完整哈希仍为 `7cc1951ff095404a5001850a9977a9ffe5d36bc45fa42f5b4abbe446e0e1e7b9`，active/enabled，既有 OMB／Orca 路由保留。两端均未启用 Caddy 容器。
+- 50 已删除被替换的旧应用镜像、制品归档、源码 bundle、验证脚本和临时构建目录，没有制作用户数据备份。本机保留 `openmausbot-vm:before-codex-accounts-20261015`。没有复制两端的用户数据或账号，没有执行真实 OpenAI 登录、邮箱验证或付费推理。
+
+证据目录为 `.omb-scratch/codex-accounts-20261015/`，包括两端 receipt、`tests.log`、`push.log`、各构建／部署日志、`packaged.log`、`native-and-artifacts.json`、`image-smoke.json` 和 `cleanup-50.log`。50 的 `.omb-scratch/deployment-receipt.json` 仅保存不含凭据或用户内容的运维回执。
