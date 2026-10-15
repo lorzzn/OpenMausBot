@@ -16,13 +16,14 @@
 | 上次纳入的上游提交 | `a2b2b1b723539c0506766067c6cbd6989c189e12` |
 | 本次纳入的上游提交 | `c2cf30127c9fb6fb506be533f361214f764c01da` |
 | 本次源码版本 | `0.1.111` |
+| 本次源码合并提交 | `b847b3ff0150b7a89823bf6b046a7f519cbe1b56` |
 
 本次同步纳入 **583 个上游提交**（包括 merge），固定目标为上表完整 SHA。
 全部引擎的 Full Access、未设置权限时的 Full 默认值、主管创建 Bot 的权限均采用上游实现，删除 fork 的引擎白名单差异；显式保存为 Ask 的旧 Bot／thread 不自动提升。
 上游还新增聊天交互组件、命令行团队操作、可选的上下文／记忆与协作功能，并修复 Codex 启动并发、账号和额度提示、Antigravity 权限字段解析、浏览器清理与失联恢复。
 
 源码同步和此次两端发布记录见第 16 节。第 10—15 节为历史记录。
-下面部署表在切换前仍记录 0.1.108；只有核对实际容器制品后才更新部署版本，不能将源码合并等同于已发布。
+本机和 50 已完成 0.1.111 发布；运行制品来自 `b847b3ff0`，随后文档提交不改变镜像内源码。
 
 ## 2. 必须保留的定制
 
@@ -70,8 +71,8 @@ CLI 和身份信息保存在容器的持久 HOME `/data`，更新镜像不应把
 | --- | --- | --- |
 | 主机 | 当前开发电脑 | `108.186.129.50` |
 | 源码目录 | `/home/zhipeng/codes/OpenMausBot` | `/opt/OpenMausBot` |
-| 运行制品的源码 HEAD | `d7fe66882` | `d7fe66882`，同一份编译制品 |
-| 核对时应用版本 | `0.1.108` | `0.1.108` |
+| 运行制品的源码 HEAD | `b847b3ff0` | `b847b3ff0`，同一份编译制品 |
+| 核对时应用版本 | `0.1.111` | `0.1.111` |
 | 对外地址 | `https://omb.oomdev.de5.net/` | `https://ombus.oomdev.de5.net/` |
 | Docker 主机端口 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
 | 公网入口 | Cloudflare Tunnel | 宿主机 systemd Caddy |
@@ -233,7 +234,7 @@ git diff --name-only --diff-filter=U
 - **Cursor 安装与检测**：同时保留上游的安装失败原因与本分支的实际 CLI 解析；检测和运行必须使用同一个实例 HOME 下的可执行文件。
 - **安装结果**：“请求成功”不足以显示“已安装”；保留上游对返回引擎状态的验证，也要保留 Cursor 原生安装／更新入口。
 - **任务权限**：运行时能力测试要体现本分支的 Full Access。从 0.1.111 起采用上游所有引擎支持 Full 的统一契约；保持外部请求不继承主管授权、Auto 仍要求原生审核器的测试，不恢复已移除的 Full 白名单。
-- **验证 launcher**：新增位置参数后核对所有调用者，尤其是网页静态目录与本分支的隔离配对管理员测试参数，避免把 boolean 当成路径。
+- **验证 launcher**：新增位置参数后核对所有调用者，尤其是网页静态目录与隔离端到端测试使用的参数，避免把 boolean 当成路径。
 - **路由计数 gate**：核对应用端口的 `/hooks/` 和新电脑路由中的 VM 授权；旧配对 Full Access 路由不再保留。上游移走旧路由时降低对应计数；不要删测试、放宽成任意计数。
 - **翻译**：按 JSON 键进行三方合并，保留新增字段。英文变化后同步审阅译文与 `source-hashes.json`；不要只接受哈希却不读译文。
 - **已有测试失败**：先看错误是否来自具体冲突、测试夹具或 Node／CLI 环境。修正真实原因，保留有效断言，避免用延时／跳过／重试掩盖功能问题。
@@ -370,6 +371,8 @@ docker compose -f compose.yaml -f compose.vm.yaml -f compose.tunnel.yaml -f comp
 
 SSH 到 `root@108.186.129.50` 后核对 `/opt/OpenMausBot`。源码有本机已不在的临时补丁时，先核对差异，再推进到对应提交；不要强制覆盖。
 如果 root 读已有工作目录触发 Git 的 dubious ownership，先确认仓库的实际归属。对已确认目录可使用单次 `git -c safe.directory=/opt/OpenMausBot ...`；不要把所有路径都设为可信。
+
+50 的源码仓库是浅克隆。增量 Git bundle 的前置提交不一定都在远端；先运行 `git bundle verify`，若提示缺少 prerequisite，改为从本机创建包含目标分支完整可达历史的 bundle，再校验、fetch 和快进。此次 0.1.111 已按此处理；不要用 reset 覆盖远端工作区，也不要把制品校验成功误认为 Git 同步已经成功。
 
 50 当前实际栈包含 `/mnt` 和 rclone 配置目录，使用完整命令：
 
@@ -686,4 +689,33 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 网页测试现在在测试单线程设置前显式把 fixture 的 Bot 与所有 thread 设为 Ask，避免前面场景已写入的 Full 影响断言；产品仍使用上游默认值，没有修改生产用户的权限来让测试通过。
 
 没有运行完整跨平台测试集、真实付费引擎或真实邮箱验证码。创建 Bot、改权限、发消息、导出和浏览器操作均只在隔离 HOME／数据目录进行。
-源码和制品验证通过后按第 8 节发布两端；实际镜像 ID、源码 SHA、挂载和健康结果在发布后追加，未发布时不能以本段代替运行证据。
+源码合并提交 `b847b3ff0` 已通过 pre-push 的 lint/typecheck/i18n 检查并推送到 `origin/feature/zpmodified`；下面记录已完成的发布。
+
+
+### 两端发布结果
+
+2026-10-15（北京时间）两端已切换到同一份 0.1.111 编译制品，发布标签为 `openmausbot-vm:0.1.111-b847b3ff0`，运行标签仍为 `openmausbot-vm:local`。
+
+| 项目 | 本机 | 50 |
+| --- | --- | --- |
+| 镜像内源码 SHA | `b847b3ff0150b7a89823bf6b046a7f519cbe1b56` | 同左 |
+| 实际镜像 ID | `sha256:98261f05931ba01ca0fec564b8ac8c80ce103ba2448247e021fda51860e7275b` | `sha256:ba8e9bad333ea3c0ca7cb914729f1e10bf1e45ac6bbf08b8e64fa6a2de62c8bc` |
+| 服务 | omb + dind + cloudflared | omb + dind |
+| Compose | 基础 + VM + Tunnel + mnt + rclone | 基础 + VM + mnt + rclone |
+| 映射 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
+| 公网入口 | `https://omb.oomdev.de5.net`，健康／首页校验通过 | `https://ombus.oomdev.de5.net`，健康／首页校验通过 |
+| 状态 | healthy，RestartCount 0 | healthy，RestartCount 0 |
+| HOME／用户／共享内存 | `/data`，`1000:1000`，512 MiB | 同左 |
+| 专用 VM daemon | 29.8.1，连接新应用网络命名空间 | 同左 |
+
+- 两端继续采用第 11 节的制品覆盖基础运行时方法，没有从网络重新安装基础引擎。制品由本机当前锁定依赖重新编译；两台基础镜像均为 `sha256:6474542e76e44ef73280a82dbd61600e5c243905beeb60c896710d3890a790c2`，平台均为 Linux amd64。
+- `/app/package.json` 两端均为 0.1.111；`/app/deployment-manifest.json` 记录完整 fork 源码 SHA、上游 SHA、构建时间和逐文件哈希。**1278 个应用制品文件**在两台最终镜像中全部核对通过，聚合 SHA-256 为 `ccc0a1d98c0b9670ab782e6863198e035f70ee6d9e5add344f13677e7afcee3a`。
+- 两台最终镜像在无网络的一次性容器中通过 DuckDB 内存 SQL、resvg PNG、1Password SDK 加载及 WASM 校验。本机最终镜像还用临时 HOME、不挂生产数据独立启动，健康和网页通过。
+- 本机 loopback／Tunnel、50 loopback／宿主机 Caddy 四个入口的首页 SHA-256 都是 `8ec8c763311ac6f2a3f98519ca00ee5d25bf52f6f4e234e7c4b220013a7b7e66`。本机 Tunnel 重新建立连接前曾出现一次短暂连接失败，随后在同次检查中恢复并通过，没有再次重启应用。
+- 两端更新前后数据卷、VM socket、端口、UID/GID、`/mnt` RW/rslave 与 rclone 目录 RW 绑定一致。以应用 UID 1000 打开 Google Drive／OneDrive 目录可读，rclone 配置可读写且包含 gdrive/onedrive；本机现有 CLI 的 `listremotes` 通过，50 仍只挂配置、未安装 rclone 程序。
+- 50 的宿主机 Caddy active/enabled，完整配置哈希 `7cc1951ff095404a5001850a9977a9ffe5d36bc45fa42f5b4abbe446e0e1e7b9` 未变，OMB 与 Orca 既有路由保留，没有运行 Caddy 容器。
+- 50 先完成镜像和制品校验，再通过完整源码 bundle 快进浅克隆仓库，最后用现有 `/usr/local/bin/omb-compose` 切换。增量 bundle 因缺少历史提交而拒绝，没有以失败的校验结果继续切换。
+- 50 已删除被替换的旧应用镜像、此次上传的构建归档、两个源码 bundle、校验脚本和临时构建目录；没有制作用户数据备份。本机保留 `openmausbot-vm:before-sync-20261015` 用于恢复。
+- 两端没有互相复制用户数据或账号，没有发送邮箱验证码、生成生产配对码或执行真实付费引擎请求。最终部署记录只证明本节列出的健康、制品、入口、挂载及 VM 连接。
+
+主要证据是 `local-receipt.json`、`50-receipt.json`、`native-and-artifacts.json`、`image-smoke.json`、`packaged.log`、`stream-ui.log`、`push.log` 和各部署日志，位于本节开头的忽略目录。50 仅保留不含凭据或用户内容的 `.omb-scratch/deployment-receipt.json` 运维回执。
