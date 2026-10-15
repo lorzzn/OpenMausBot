@@ -22,8 +22,8 @@
 新增原生 HighLevel CRM 连接和按 Bot 授权、用户消息渐变配色，修复官方 Composio 代理的自定义认证配置，以及测试清单和 Windows 诊断／Files／群聊夹具问题。
 全部引擎的 Full Access 继续使用上游实现；流式显示、按需安装 Cursor、套餐用量、独立 Codex 设备码账号和 Docker 部署定制继续保留。
 
-最近一次上游同步见第 20 节，账号功能见第 17 节，Cursor 参数适配及已完成的两端发布见第 19 节。第 10—19 节保留相应历史记录。
-本机和 50 均已部署 0.1.111，制品来自 `2dce5fc0d524a367b3f9fea398b4b33d9ff07a6a`，包含第 18 节的上游同步与第 19 节的 Cursor 修复。后续仅更新部署文档的提交不改变镜像内的制品源码 SHA。
+最近一次上游同步及两端发布见第 20 节，账号功能见第 17 节，Cursor 参数适配见第 19 节。第 10—19 节保留相应历史记录。
+本机和 50 均已部署 0.1.111，制品来自 `e5f7f47abb8ac80415e06d60558c3212bd54113b`，包含第 20 节的上游同步及此前的 Cursor 修复。后续仅更新部署文档的提交不改变镜像内的制品源码 SHA。
 
 ## 2. 必须保留的定制
 
@@ -74,7 +74,7 @@ Cursor 模型统一通过 ACP 配置接口设置，不再放入启动参数 `--m
 | --- | --- | --- |
 | 主机 | 当前开发电脑 | `108.186.129.50` |
 | 源码目录 | `/home/zhipeng/codes/OpenMausBot` | `/opt/OpenMausBot` |
-| 运行制品的源码 SHA | `2dce5fc0d` | `2dce5fc0d`，同一份编译制品 |
+| 运行制品的源码 SHA | `e5f7f47ab` | `e5f7f47ab`，同一份编译制品 |
 | 核对时应用版本 | `0.1.111` | `0.1.111` |
 | 对外地址 | `https://omb.oomdev.de5.net/` | `https://ombus.oomdev.de5.net/` |
 | Docker 主机端口 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
@@ -879,4 +879,42 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 
 发布继续使用同一份编译制品覆盖固定基础运行时。现有完整 Compose 组合、数据卷、端口、512 MiB 共享内存、专用 VM socket、`/mnt` RW/rslave 与 rclone 目录绑定必须保留；50 不制作数据备份、不保留旧应用镜像或上传归档。
 
-本轮验证与发布日志位于被忽略的 `.omb-scratch/upstream-sync-20261015-2c98018a4/`。最终两端制品与检查结果在部署完成后追加。
+本轮验证与发布日志位于被忽略的 `.omb-scratch/upstream-sync-20261015-2c98018a4/`。两端部署通过后完成的正式合并提交为 `e5f7f47abb8ac80415e06d60558c3212bd54113b`，与构建前固定的对象 SHA 完全一致；源码树为 `5719d5a8241d541512595975d47039e47572ba32`。
+
+### 验证结果
+
+| 检查 | 结果 |
+| --- | --- |
+| 主应用回归 | 36 个文件，1467 项通过；1 项 Windows 专用权限管道测试在 Linux 跳过。覆盖 HighLevel、连接应用、消息配色、Cursor／Claude／Codex／Pi、权限、流式、用量、VM、Files、Store 与 API 清单 |
+| Composio broker | 1 个文件，26 项通过 |
+| HighLevel relay 与 control plane | 修正 state 文本别名后，2 个文件、40 项通过 |
+| Electron 诊断 | 1 个文件，65 项通过 |
+| 静态检查 | Node 24 typecheck、lint、12 个语言包／4559 条英文源字符串检查、183 个 Electron 模块语法检查通过 |
+| Control plane 类型 | 先生成 `worker-configuration.d.ts`，再通过独立 TypeScript 检查；生成物不入库 |
+| 构建与隔离启动 | 清空 server/UI 输出后构建成功；packaged smoke 在仓库与 node_modules 外通过启动、13 个代理入口、MCP、headless CLI、隔离导出 worker、launcher、compile cache 与 enterprise 层发现 |
+
+共 1598 项测试通过，1 项按平台跳过。没有运行完整跨平台测试集；所有登录、授权、Bot 与消息写入验证均使用临时 HOME／数据与模拟提供方。真实邮箱验证码、生产配对码、真实 CRM 登录和付费模型推理未用于本轮验证。
+
+### 两端发布结果
+
+发布标签为 `openmausbot-vm:0.1.111-e5f7f47ab`，运行标签仍为 `openmausbot-vm:local`；两端 `/app/package.json` 均为 0.1.111。基础镜像保持 `sha256:6474542e76e44ef73280a82dbd61600e5c243905beeb60c896710d3890a790c2`，没有重新安装持久 HOME 内的引擎。
+
+| 项目 | 本机 | 50 |
+| --- | --- | --- |
+| 制品源码 | `e5f7f47abb8ac80415e06d60558c3212bd54113b` | 同左 |
+| 上游基线 | `2c98018a4e2eed4c5f1634f2610087428a7f0dd2` | 同左 |
+| 实际镜像 ID | `sha256:39d3215ee89f9ffac6dddb91fce81e4f66b14f7f6c32ceac448504e30592ed22` | `sha256:be63a7dd6398b418cee8d57edce6fac19824f5ae78899fe57d4d0a156d96ce53` |
+| Compose | 基础 + VM + Tunnel + mnt + rclone | 基础 + VM + mnt + rclone |
+| HTTP 映射 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
+| 公网入口 | `https://omb.oomdev.de5.net` | `https://ombus.oomdev.de5.net` |
+| 状态 | healthy，RestartCount 0 | healthy，RestartCount 0 |
+
+- 两端最终镜像的 **1312 个应用制品文件**全部核对通过，聚合 SHA-256 为 `f53fafa4bea34450d047148bca98a0a6a6d29f9d5ef3767580eebed6228d1ee2`。`deployment-manifest.json` 包含完整源码 SHA、源码树 SHA、上游 SHA、构建时间及逐文件哈希。
+- 一次性无网络容器通过 DuckDB SQL、resvg PNG、1Password SDK 加载与 WASM 校验；本机最终镜像用临时 HOME、无生产数据挂载独立启动，通过健康与网页检查。
+- 本机 loopback／Tunnel、50 loopback／宿主机 Caddy 四个入口的健康接口和首页通过，首页 SHA-256 均为 `675cde4dd898a614031fea431884b8d1a76a6ba0851b1681fa63b2b78f088ff3`。
+- 原有数据卷、UID/GID 1000:1000、512 MiB 共享内存、端口、专用 VM socket、`/mnt` RW/rslave、rclone 目录 RW 绑定保持一致。专用 VM daemon 29.8.1 可连接，dind 与本机 cloudflared 连接新应用网络命名空间。
+- 应用 UID 可读 Google Drive／OneDrive 目录及 rclone 配置；本机已有 rclone 的 `listremotes` 通过，50 仍只挂配置、没有安装 rclone 程序。
+- 50 宿主机 Caddy active/enabled，配置哈希仍为 `7cc1951ff095404a5001850a9977a9ffe5d36bc45fa42f5b4abbe446e0e1e7b9`，既有 OMB／Orca 路由保留；两端没有运行 Caddy 容器。
+- 50 已删除旧应用镜像、构建归档、验证脚本和临时构建目录，没有制作用户数据备份。本机保留 `openmausbot-vm:before-sync-2c98018a4-20261015`。源码 bundle 仅用于校验后快进并在完成时删除，后续部署文档提交不重建镜像。
+
+主要证据为两端 receipt、`frozen-source.json`、`commit.log`、`tests.log`、`broker.log`、`control-plane-final.log`、`diagnostics.log`、构建／部署日志、两端原生模块与文件校验、`image-smoke.json`、`cleanup-50-final.log` 及推送／源码同步日志。50 仅保留不含凭据或用户内容的 `.omb-scratch/deployment-receipt.json` 运维回执。
