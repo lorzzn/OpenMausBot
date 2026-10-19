@@ -6,12 +6,12 @@ import { join } from "node:path";
 import { resolveClaudeConfigDir } from "./drivers/claude.ts";
 import { codexHome } from "./drivers/codex-identity.ts";
 import { antigravityProfileDirectory } from "./drivers/antigravity-acp.ts";
-import { harnessHome, userHome } from "./env-path.ts";
+import { harnessHome, sealedFixture, userHome } from "./env-path.ts";
 import { PRODUCT_NAME } from "./plan-usage-accounts.ts";
 
 export { planAccountsFromInstances } from "./plan-usage-accounts.ts";
 
-export type PlanDriver = "claude" | "codex" | "grok" | "cursor" | "antigravity";
+export type PlanDriver = import("../shared/plan-usage.ts").PlanDriver;
 
 export interface PlanWindow {
   available: boolean;
@@ -337,7 +337,7 @@ export function defaultCredentialReader(env: NodeJS.ProcessEnv = process.env): C
         return null;
       }
     },
-    ...(process.platform === "darwin" ? {
+    ...(process.platform === "darwin" && !sealedFixture() ? {
       readClaudeKeychain: readDarwinClaudeKeychain,
       readCursorKeychain: (service: string) => readDarwinKeychain(service, "cursor-user"),
     } : {}),

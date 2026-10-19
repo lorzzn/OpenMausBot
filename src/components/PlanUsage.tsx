@@ -95,6 +95,20 @@ function modelLabel(name: string, driver: string): string {
   return name;
 }
 
+function providerLabel(provider: Pick<PlanProvider, "name">): string {
+  const normalized = provider.name.trim().toLowerCase();
+  if (normalized === "chatgpt plan") return t("planUsage.provider.chatgptPlan");
+  if (normalized === "claude (api key)") return t("planUsage.provider.claudeApiKey");
+  return provider.name;
+}
+
+function providerError(provider: Pick<PlanProvider, "error">): string | null {
+  const message = provider.error?.trim();
+  if (!message) return null;
+  const signIn = /^Sign in again in (.+)$/i.exec(message);
+  return signIn ? t("planUsage.signInAgain", { provider: providerLabel({ name: signIn[1]! }) }) : message;
+}
+
 function WindowRow({
   label,
   window,
@@ -202,7 +216,7 @@ export function PlanUsage() {
           {report.providers.map((provider) => (
             <div key={provider.id} className="border-t border-hairline/30 pt-3 first:border-t-0 first:pt-0">
               <div className="mb-2 flex min-w-0 items-baseline gap-2">
-                <span className="truncate text-[14px] font-medium text-ink">{provider.name}</span>
+                <span className="truncate text-[14px] font-medium text-ink">{providerLabel(provider)}</span>
                 {provider.plan && <span className="truncate text-[12px] text-ink-secondary">{provider.plan}</span>}
               </div>
               {provider.ok ? (
@@ -255,7 +269,7 @@ export function PlanUsage() {
                   )}
                 </div>
               ) : (
-                <p className="text-[13px] text-danger">{provider.error}</p>
+                <p className="text-[13px] text-danger">{providerError(provider)}</p>
               )}
             </div>
           ))}

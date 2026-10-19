@@ -23,7 +23,6 @@ services:
       OMB_WEBHOOK_PORT: "8800"
       OMB_PUBLIC_URL: ${OMB_PUBLIC_URL:-http://localhost:${OMB_HTTP_PORT:-8080}}
       OMB_WEBHOOK_PUBLIC_URL: ${OMB_WEBHOOK_PUBLIC_URL:-${OMB_PUBLIC_URL:-http://localhost:${OMB_HTTP_PORT:-8080}}}
-      OMB_PRO_PLAN: ${OMB_PRO_PLAN:-0}
     healthcheck:
       test:
         - CMD

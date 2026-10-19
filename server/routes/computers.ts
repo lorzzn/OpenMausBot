@@ -17,7 +17,7 @@ import {
 } from "../container-computer.ts";
 import { viewerTargetId } from "../desktop-viewer-targets.ts";
 import { localVmViewerTarget } from "../local-vm-viewer.ts";
-import type { LocalVmIdleTimer } from "../local-vm-idle.ts";
+import type { ComputerIdleTimer } from "../computer-idle.ts";
 import type { LocalVmLease } from "../local-vm-lease.ts";
 import { redactSecretsInText } from "../redact.ts";
 import { isProxied, type RequestAuth } from "../request-auth.ts";
@@ -27,13 +27,15 @@ import { sectionKey, type BotRecord, type Store } from "../store.ts";
 import { teamComputerAssignment, teamComputerCreate, teamComputerOwner, type TeamComputerRecord, type TeamComputers } from "../team-computers.ts";
 import * as vps from "../vps-computer.ts";
 import type { BusyFlag, RemoteComputerProvider } from "./config.ts";
+import { createComputerFramesRoutes } from "./computer-frames.ts";
+import { createComputerUsageRoutes } from "./computer-usage.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
 export interface ComputerRouteDeps {
   store: Pick<Store, "bot" | "bots" | "sections">;
   cfg: AppConfig;
   sessions: Pick<SessionRegistry, "isLive">;
-  teamComputers: Pick<TeamComputers, "get" | "create" | "assign" | "setProblem">;
+  teamComputers: Pick<TeamComputers, "get" | "create" | "assign" | "setProblem" | "list">;
   computerControl: Pick<ComputerControl, "snapshot" | "take" | "release" | "acquireLease" | "releaseLease" | "ownsLease">;
   routines(): Pick<RoutineManager, "activeRunForBot"> | null;
   controlLeaseIdSchema: ZodString;
@@ -48,7 +50,7 @@ export interface ComputerRouteDeps {
   localVmOwnerBusy(botId: string): boolean;
   localVmIdleMs(): number;
   localVmLeaseFor(target: LocalVmTarget): Pick<LocalVmLease, "current">;
-  localVmIdleFor(target: LocalVmTarget): Pick<LocalVmIdleTimer, "touch" | "cancel">;
+  localVmIdleFor(target: LocalVmTarget): Pick<ComputerIdleTimer, "touch" | "cancel">;
   localVmTargetForBot(botId: string): LocalVmTarget;
   localVmTargetForStatus(botId: string, threadId?: string): LocalVmTarget;
   /** What the user's machine can host, for the panel. */
@@ -71,6 +73,8 @@ export interface ComputerRouteDeps {
   claimBoatInventoryRequest(boxId: string): () => void;
   claimManagedBoatMutation(instance: boat.ManagedBoatInventoryInstance): () => void;
   claimManagedVpsMutation(containerName: string): () => void;
+  /** A cloud computer was just woken, created or opened: its idle window starts again. */
+  cloudComputerUsed(owner: string): void;
 }
 
 export function createComputerRoutes(deps: ComputerRouteDeps): RouteHandler {
@@ -82,9 +86,14 @@ export function createComputerRoutes(deps: ComputerRouteDeps): RouteHandler {
     teamComputersPayload, teamComputerInUse, managedBoatOwners, providerTransitionMessage, botHasActiveTurn,
     botComputerControlKey, botComputerControlSnapshot, computerPreviewBot, computerPreviewSurface,
     claimTeamComputerLifecycle, claimBotComputerLifecycle, claimBoatInventoryRequest, claimManagedBoatMutation,
-    claimManagedVpsMutation,
+    claimManagedVpsMutation, cloudComputerUsed,
   } = deps;
-  return async ({ req, res, url, path, method, auth, json, readBody }) => {
+  const usage = createComputerUsageRoutes(deps);
+  const frames = createComputerFramesRoutes(deps);
+  return async (context) => {
+    if (await usage(context) !== PASS) return;
+    if (await frames(context) !== PASS) return;
+    const { req, res, url, path, method, auth, json, readBody } = context;
     const routines = deps.routines();
     let m: RegExpMatchArray | null = null;
     // Team Boats have real ownership, never a hidden bot or an arbitrary provider id. Admin-only.
@@ -159,7 +168,7 @@ export function createComputerRoutes(deps: ComputerRouteDeps): RouteHandler {
         } catch (error) {
           teamComputers.setProblem(computer.id, redactSecretsInText(error instanceof Error ? error.message : String(error)));
           throw error;
-        } finally { release(); }
+        } finally { release(); cloudComputerUsed(teamComputerOwner(computer.id)); }
       }
       if (method === "POST" && found && action && action !== "control") {
         if (action === "provision" && body?.acknowledgeCost !== true) return json(res, 400, { error: "Confirm cloud computer creation or wake costs with acknowledgeCost: true" });
@@ -170,7 +179,7 @@ export function createComputerRoutes(deps: ComputerRouteDeps): RouteHandler {
           if (!computerControl.snapshot(key).held) return json(res, 409, { error: "Take control before opening this shared desktop" });
           const release = claimBotComputerLifecycle(key);
           try { return json(res, 200, await boat.joinReadyBoat(cfg, key)); }
-          finally { release(); }
+          finally { release(); cloudComputerUsed(key); }
         }
         const release = claimTeamComputerLifecycle(found);
         try {
@@ -182,7 +191,7 @@ export function createComputerRoutes(deps: ComputerRouteDeps): RouteHandler {
         } catch (error) {
           teamComputers.setProblem(found.id, redactSecretsInText(error instanceof Error ? error.message : String(error)));
           throw error;
-        } finally { release(); }
+        } finally { release(); if (action === "provision") cloudComputerUsed(teamComputerOwner(found.id)); }
       }
       return json(res, 405, { error: "method not allowed" });
     }

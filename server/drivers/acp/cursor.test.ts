@@ -2,10 +2,11 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSyn
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ensureDirs } from "../../config.ts";
 import { recordEvents } from "../../testing/events.ts";
+import { CURSOR_MODEL_FIXTURE } from "../../testing/cursor-model-fixture.ts";
 import { removeTempDir } from "../../testing/cleanup.ts";
 import {
   classifyCursorError,
@@ -19,6 +20,9 @@ import {
 } from "./cursor.ts";
 
 const FAKE_CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "testing", "fake-acp-cli.ts");
+
+beforeEach(() => vi.stubEnv("FAKE_ACP_CURSOR_MODELS", JSON.stringify(CURSOR_MODEL_FIXTURE)));
+afterEach(() => vi.unstubAllEnvs());
 
 describe("decodeCursorAuthStatus", () => {
   it("reads isAuthenticated from live CLI JSON", () => {

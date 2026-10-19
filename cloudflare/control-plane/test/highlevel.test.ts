@@ -282,13 +282,6 @@ describe("HighLevel OAuth relay", () => {
     expect(highLevel.calls).toHaveLength(1);
   });
 
-  it("derives distinct lookups for state strings that decode to the same bytes", async () => {
-    const state = "A".repeat(43);
-    const alternate = `${state.slice(0, -1)}B`;
-    expect(atob(state)).toBe(atob(alternate));
-    expect(await flowLookup(state)).not.toBe(await flowLookup(alternate));
-  });
-
   it("claim before the callback is 404 so the harness keeps polling; a wrong state is 404 too", async () => {
     const highLevel = fakeHighLevel();
     const worker = createWorker(fetch, fetch, highLevel.fetch);
@@ -298,8 +291,13 @@ describe("HighLevel OAuth relay", () => {
     const early = await claim(worker, testEnv, flow.state);
     expect(early.status).toBe(404);
     expect(await early.json()).toEqual({ error: "highlevel_unknown_state" });
+    // The other spellings of the very same 32 bytes (the last character's two spare bits) open nothing.
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const aliases = [1, 2, 3].map((spare) => `${flow.state.slice(0, -1)}${alphabet[alphabet.indexOf(flow.state.at(-1)!) | spare]}`);
+    for (const alias of aliases) expect((await callback(worker, testEnv, { code: CODE, state: alias })).status, alias).not.toBe(200);
 
     expect((await callback(worker, testEnv, { code: CODE, state: flow.state })).status).toBe(200);
+    for (const alias of aliases) expect((await claim(worker, testEnv, alias)).status, alias).toBe(404);
     // A state that differs in one character opens nothing, before or after.
     const wrong = `${flow.state.slice(0, -1)}${flow.state.endsWith("A") ? "B" : "A"}`;
     const other = await claim(worker, testEnv, wrong);

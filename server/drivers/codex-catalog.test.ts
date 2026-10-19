@@ -239,7 +239,7 @@ name = "oMLX"
     const instance = await CodexDriver.create({
       instanceId: "codex-catalog",
       displayName: "Codex",
-      environment: { HOME: home, USERPROFILE: home },
+      environment: { HOME: home, USERPROFILE: home, CODEX_HOME: join(home, ".codex") },
       enabled: true,
       config: { ...CodexDriver.defaultConfig(), cli: FAKE_CLI },
     });

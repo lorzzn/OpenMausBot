@@ -142,14 +142,10 @@ or otherwise providing rclone separately.
 
 ## Live calls on a standalone server
 
-Set `OMB_PRO_PLAN=1` in `.env` to enable the upstream Live-call entitlement
-for a standalone Docker server, then recreate the application container.
-Compose passes the setting to the application in every deployment mode;
-the default is `0`. With it disabled, starting a Live call returns HTTP 402
-with `needsPro`. This does not affect text chat.
-
-Live calls also require an OpenAI API key configured in the application and
-a browser microphone over HTTPS or localhost. See
+Live calls require an OpenAI API key configured in Settings → API keys and
+a browser microphone over HTTPS or localhost. A separately configured Live key
+takes precedence. Upstream 0.1.116 no longer requires a Pro entitlement;
+`OMB_PRO_PLAN` is obsolete and is not passed to the application. See
 [`docs/verification/live-calls.md`](../../docs/verification/live-calls.md)
 for the upstream contract and isolated checks.
 

@@ -3,7 +3,7 @@ import * as composio from "../composio.ts";
 import type { HighLevelHost } from "../highlevel/host.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
-export function createConnectorReadRoutes(deps: { config: AppConfig; highlevel: Pick<HighLevelHost, "toolListing"> }): RouteHandler {
+export function createConnectorReadRoutes(deps: { config: AppConfig; highlevel: Pick<HighLevelHost, "toolListing">; managed: boolean }): RouteHandler {
   return async ({ res, url, path, method, json }) => {
     if (method !== "GET") return PASS;
     const cfg = deps.config;
@@ -13,7 +13,7 @@ export function createConnectorReadRoutes(deps: { config: AppConfig; highlevel: 
       return json(res, 200, {
         configured: composio.configured(cfg),
         mode: composio.connectionMode(cfg),
-        setup: composio.connectorSetup(cfg),
+        setup: composio.connectorSetup(cfg, deps.managed),
         source,
         cards,
         ...(pagination ? { pagination } : {}),

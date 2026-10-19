@@ -45,7 +45,6 @@
 //   FAKE_ACP_MODE_ACK_FILE  while it exists a mode switch answers "empty" (no configOptions) or "error"
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { CURSOR_MODEL_FIXTURE } from "./cursor-model-fixture.ts";
 
 const mode = process.env.FAKE_ACP_MODE ?? "happy";
 
@@ -333,7 +332,7 @@ const recordMethod = (method: string) => {
 };
 
 const configCalls: Array<{ method: string; params: unknown }> = [];
-const cursorModels = process.env.FAKE_ACP_CURSOR_MODELS ? JSON.parse(process.env.FAKE_ACP_CURSOR_MODELS) : CURSOR_MODEL_FIXTURE;
+const cursorModels = JSON.parse(process.env.FAKE_ACP_CURSOR_MODELS ?? "[]");
 let cursorParameterized = false;
 let cursorParameters: Record<string, string> = {};
 
