@@ -1,7 +1,19 @@
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 
-export function ServiceIcon({ card, className = "size-11" }: { card: { logo: string | null; domain: string | null; label: string }; className?: string }) {
+/** One connectable app as the Apps catalog lists it. */
+export interface ToolkitCard {
+  slug: string;
+  label: string;
+  blurb: string;
+  logo: string | null;
+  noAuth?: boolean;
+  domain: string | null;
+  categories?: string[];
+}
+
+/** An app's logo, then its site's favicon, then its initial. */
+export function ServiceIcon({ card, className = "size-11" }: { card: Pick<ToolkitCard, "logo" | "domain" | "label">; className?: string }) {
   const [stage, setStage] = useState(card.logo ? 0 : card.domain ? 1 : 2);
   if (stage === 0 && card.logo) {
     return (

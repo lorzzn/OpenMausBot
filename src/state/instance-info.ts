@@ -45,8 +45,9 @@ export interface InstanceInfo {
     computerMcp?: boolean;
     agentsMcp?: boolean;
     composioMcp?: boolean;
-    /** the engine can mount the native HighLevel tools (a connected app without Composio) */
     highlevelMcp?: boolean;
+    deviceMcp?: boolean;
+    dataMcp?: boolean;
     browserMcp?: boolean;
     images?: boolean;
     effortLevels?: readonly EffortLevel[];

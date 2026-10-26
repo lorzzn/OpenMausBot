@@ -1,9 +1,10 @@
 import type { AppConfig } from "../config.ts";
 import * as composio from "../composio.ts";
 import type { HighLevelHost } from "../highlevel/host.ts";
+import type { createPhones } from "../host/phones.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
-export function createConnectorReadRoutes(deps: { config: AppConfig; highlevel: Pick<HighLevelHost, "toolListing">; managed: boolean }): RouteHandler {
+export function createConnectorReadRoutes(deps: { config: AppConfig; highlevel: Pick<HighLevelHost, "toolListing">; phones: Pick<ReturnType<typeof createPhones>, "toolListing">; managed: boolean }): RouteHandler {
   return async ({ res, url, path, method, json }) => {
     if (method !== "GET") return PASS;
     const cfg = deps.config;
@@ -28,13 +29,19 @@ export function createConnectorReadRoutes(deps: { config: AppConfig; highlevel: 
           services: {},
         });
       }
-      return json(res, 200, { configured: true, credentialStore: "ok", services: await composio.connectedServices(cfg) });
+      const inventory = await composio.connectedServicesInventory(cfg);
+      return json(res, 200, {
+        configured: true,
+        credentialStore: "ok",
+        inventoryComplete: inventory.complete,
+        services: inventory.services,
+      });
     }
     if (method === "GET" && path === "/api/connectors/tools") {
       const availability = composio.connectorAvailability(cfg);
-      const highlevelTools = highlevelHost.toolListing();
+      const highlevelTools = { ...highlevelHost.toolListing(), ...deps.phones.toolListing() };
       if (availability !== "configured") {
-        return json(res, 200, { configured: Boolean(highlevelTools), services: { ...highlevelTools } });
+        return json(res, 200, { configured: Object.keys(highlevelTools).length > 0, services: highlevelTools });
       }
       try {
         return json(res, 200, { configured: true, services: { ...await composio.listConnectorTools(cfg), ...highlevelTools } });

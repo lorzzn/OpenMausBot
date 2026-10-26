@@ -365,7 +365,7 @@ const support = (run: typeof execCli): AcpSupport => ({
   isAuthenticated: (env, config) => probeCursorAuth(resolveCursorCli(config.cli, env), env, run),
   classifyError: classifyCursorError,
 
-  clientCapabilities: { _meta: { parameterizedModelPicker: true } },
+  clientCapabilitiesMeta: { parameterizedModelPicker: true },
   async configureSession({ request, sessionId, turn, modelLabel }) {
     if (turn.model) await configureCursorModel(request, sessionId, turn.model, modelLabel);
   },

@@ -8,10 +8,10 @@ const INDEX = readFileSync(new URL("../../server/index.ts", import.meta.url), "u
 const EXACT: Record<string, number> = {
   // Internal harness routes have no server/routes module yet; moving them out is the follow-up that lowers this.
   // The app port also serves /hooks/ for direct HTTP and Tunnel deployments.
-  'path === "/': 104,
-  "path.match(": 29,
-  "path.startsWith(": 10,
-  ".exec(path)": 6,
+  'path === "/': 88,
+  "path.match(": 26,
+  "path.startsWith(": 7,
+  ".exec(path)": 1,
   ".test(path)": 0,
   ".includes(path)": 2,
 };
