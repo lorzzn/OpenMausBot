@@ -1,7 +1,7 @@
 # 定制分支维护、上游同步与部署交接
 
 这份文档供维护本项目的人和后续编码代理使用。它记录本仓库的定制、两套现有部署、同步步骤与验证方法。
-涉及运行状态的记录截至 **2026-10-19（北京时间）**；操作前应重新读取容器标签、端口和 Git 状态，不能把这份快照当成实时状态。
+涉及运行状态的记录截至 **2026-10-26（北京时间）**；操作前应重新读取容器标签、端口和 Git 状态，不能把这份快照当成实时状态。
 
 ## 1. 仓库与本次同步基线
 
@@ -11,21 +11,20 @@
 | 定制分支 | `feature/zpmodified` |
 | 自有远端 `origin` | `git@github.com:lorzzn/OpenMausBot.git` |
 | 官方远端 `upstream` | `https://github.com/milind-soni/OpenMausBot.git` |
-| 合并前的定制分支提交 | `2fcf5270511155a8dba0be336b5dbd1660af8905` |
-| 上次合并提交 | `e5f7f47abb8ac80415e06d60558c3212bd54113b`，0.1.111 |
-| 上次纳入的上游提交 | `2c98018a4e2eed4c5f1634f2610087428a7f0dd2` |
-| 本次纳入的上游提交 | `c216147c3710e012941739a24d36cabaf3c62a8d` |
-| 本次合并提交／运行制品源码 | `f345225a6dacde8e4248e6ad0755e0bfba8c8c5e` |
-| 本次源码版本 | `0.1.116` |
+| 合并前的定制分支提交 | `fa4d23f52b2d0974beb9fea8ff9b536413c1230e` |
+| 上次合并提交 | `f345225a6dacde8e4248e6ad0755e0bfba8c8c5e`，0.1.116 |
+| 上次纳入的上游提交 | `c216147c3710e012941739a24d36cabaf3c62a8d` |
+| 本次纳入的上游提交 | `0d8eacc65cd3b783a0d28d019d39e6367780b911` |
+| 本次合并提交／运行制品源码 | `74485aa665feb15da60e032f150dd0be5bcac3dc` |
+| 本次源码版本 | `0.1.127` |
 | 本次合并所在分支 | `feature/zpmodified` |
 
-本次同步纳入 **493 个上游提交**（含 merge，356 个非合并提交），涉及 1177 个上游文件，固定目标为上表完整 SHA。
-范围包括 0.1.112—0.1.116，以及 v0.1.116 标签之后已合入 main 的 31 个提交。
-主要更新是统一 Automations 与应用事件触发、额度重置后继续、引擎检测复用、浏览器与团队地图、Simple 界面、记忆批处理及自有 OpenAI Key 的 Live 通话。
-Full Access 使用上游实现；流式显示、Cursor 参数化设置与面板安装／登录／更新、套餐用量、独立 Codex 设备码账号和 Docker 部署定制继续保留。
+本次同步固定纳入 **999 个上游提交**（含 merge，607 个非合并提交），涉及 1932 个上游文件。
+范围包括手机与设备工具、桌面更新与恢复、Custom ACP 的模型和推理选项、MCP Apps 以及聊天与连接应用界面更新。
+保留本分支的流式显示、Cursor 严格参数设置与安装／登录／更新、套餐用量、独立 Codex 设备码账号，以及 Docker／VM／网盘挂载。
 
-最近一次上游同步及两端发布见第 21 节，账号功能见第 17 节，Cursor 参数适配见第 19 节。第 10—20 节保留相应历史记录。
-本机和 50 均已部署 0.1.116，制品来自 `f345225a6dacde8e4248e6ad0755e0bfba8c8c5e`。
+最近一次同步与两端发布见第 22 节；账号功能见第 17 节，Cursor 参数适配见第 19 节。第 10—21 节保留历史记录。
+本机和 50 均已部署 0.1.127，制品来自 `74485aa665feb15da60e032f150dd0be5bcac3dc`。
 后续仅更新部署文档的提交不改变镜像内的制品源码 SHA。
 
 ## 2. 必须保留的定制
@@ -77,8 +76,8 @@ Cursor 模型统一通过 ACP 配置接口设置，不再放入启动参数 `--m
 | --- | --- | --- |
 | 主机 | 当前开发电脑 | `108.186.129.50` |
 | 源码目录 | `/home/zhipeng/codes/OpenMausBot` | `/opt/OpenMausBot` |
-| 运行制品的源码 SHA | `f345225a6` | `f345225a6`，同一份编译制品 |
-| 核对时应用版本 | `0.1.116` | `0.1.116` |
+| 运行制品的源码 SHA | `74485aa66` | `74485aa66`，同一份编译制品 |
+| 核对时应用版本 | `0.1.127` | `0.1.127` |
 | 对外地址 | `https://omb.oomdev.de5.net/` | `https://ombus.oomdev.de5.net/` |
 | Docker 主机端口 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
 | 公网入口 | Cloudflare Tunnel | 宿主机 systemd Caddy |
@@ -112,7 +111,7 @@ https://ombus.oomdev.de5.net:443
 
 50 的 `.env` **省略** `OMB_BIND_ADDRESS` 和 `OMB_HTTP_PORT`，使用基础 Compose 默认值 `127.0.0.1`、`8080`。
 `OMB_PUBLIC_URL` 与 `OMB_WEBHOOK_PUBLIC_URL` 都是 `https://ombus.oomdev.de5.net`。网页 Full Access 使用上游接口，已不需要功能标志。
-从本轮 0.1.116 起，上游 Live 通话使用个人 OpenAI Key；已从两端 `.env` 和 Compose 移除 `OMB_PRO_PLAN`。
+从 0.1.116 起，上游 Live 通话使用个人 OpenAI Key；已从两端 `.env` 和 Compose 移除 `OMB_PRO_PLAN`。
 单独保存的 Live Key 优先，否则使用“API 密钥”中保存的 OpenAI Key。
 应用的 `OMB_LISTEN_HOST=0.0.0.0` 是容器内部设置，不代表宿主机把 8799 或 8080 暴露到公网。
 
@@ -1012,4 +1011,79 @@ Compose 更新必须包含基础 + VM + Tunnel + mnt + rclone。原有 `/mnt` �
 5. **验证范围**：健康检查和挂载读取不能证明每个真实供应商账号都能推理、每个网盘 OAuth 仍有效或所有云功能均已配置；按任务需要再做相应真实操作。
 
 证据位于被忽略的 `.omb-scratch/upstream-sync-20261019-c216147c3/`：两端 before／receipt、冻结源码与提交日志、分批测试、浏览器证据、静态检查、构建／打包／原生模块校验、部署、清理、推送及源码同步日志。
+50 仅保留不含凭据或用户内容的 `.omb-scratch/deployment-receipt.json` 运维回执。
+
+## 22. 0.1.127 上游同步与两端发布（2026-10-26）
+
+### 固定范围与源码
+
+| 项目 | 值 |
+| --- | --- |
+| 合并前 fork | `fa4d23f52b2d0974beb9fea8ff9b536413c1230e` |
+| 上次上游基线 | `c216147c3710e012941739a24d36cabaf3c62a8d` |
+| 本轮固定上游目标 | `0d8eacc65cd3b783a0d28d019d39e6367780b911` |
+| 上游范围 | 999 个提交，607 个非合并提交，1932 个文件 |
+| 正式合并／制品源码 | `74485aa665feb15da60e032f150dd0be5bcac3dc` |
+| 源码树 | `1ece6ebcc828dd24bced6df9c34d2876b2a6fb22` |
+| 应用版本 | `0.1.127` |
+| 本机代码恢复分支 | `safety/before-upstream-20261026-0d8eacc65` |
+
+沿用第 20 节的冻结源码树与提交元数据流程，先完成两端部署，再完成正式合并提交。
+最终合并对象与部署前计算的源码 SHA 完全一致；部署文档作为后续独立提交，不重建镜像。
+没有把合并目标切换到其他上游提交。该目标的 Antigravity runtime 仍固定为 1.1.1，本轮没有另行升级它。
+
+### 合并与定制收敛
+
+- 解决 17 个文本冲突文件，接入上游手机工具、桌面更新／恢复、Custom ACP 模型与推理参数、连接应用和聊天界面更新。
+- ACP 初始化统一使用 `clientCapabilitiesMeta`，普通对话与后台文本请求都把参数化选模能力放在 `clientCapabilities._meta`；保留 Custom ACP 的 `configOptions`。
+- Cursor 继续按提供方元数据设置模型、推理与 Fast；不引入上游的旧变体替换、不因设置失败改用默认模型、不增加配置回读核验。保留实例 HOME 内的 CLI 解析和面板安装／登录／更新。
+- 保留独立 Codex 设备码账号和 ChatGPT plan 流程、各自凭据目录及用量入口，并接入上游 Codex 版本读取和后台路由。
+- 连接应用的四个读取路由继续放在 `server/routes/connector-read.ts`，纳入手机工具和上游完整连接清单状态，避免恢复 index 中的重复路由。
+- 引擎信息类型继续放在 `src/state/instance-info.ts`，补上设备／Data 工具能力；图标组件采用上游同名提取结果。套餐文案的两条新波兰语翻译同步到 fork 的提供方范围。
+- 消息脱敏采用上游提取的 `server/message-redaction.ts`，在同一实现中保留工具标题长度限制；公开聊天投影继续移除大型原始字段。
+- 保留文字／reasoning 的线程订阅与尾部清理、流式代码和 Mermaid 的延迟渲染、HTTP UUID 兼容、单端口 `/hooks/` 以及按访问源生成的 VM 查看地址。
+- VM 状态包含上游桌面更新信息；隔离 VM fixture 同时保留旧镜像／缺失镜像语义与动态查看端口。
+- 本分支原有文件行数上限没有提高：index 17226 → 16589，前端 store 3551 → 3431，ACP core 2010 → 1804，Codex 1834 → 1813，PluginsPanel 1084 → 1034。index 的精确路径判断 104 → 88，`startsWith` 10 → 7，继续计入应用端口的直接 webhook 入口。小于 1000 行的 SettingsModal 从大文件表移除。
+
+### 验证记录与范围
+
+| 检查 | 结果 |
+| --- | --- |
+| 主应用回归 | 129 个文件：121 个通过、1 个失败、7 个跳过；2556 项通过、7 项失败、101 项跳过。最先启动的 routine-recovery 文件因合并时的重复导入失败，修正后该文件 7 项全部重跑通过 |
+| VM、手机与账号补充回归 | 20 个文件，196 项通过、2 项跳过；覆盖真实隔离服务器上的群聊／Goal VM、桌面更新、查看器授权、手机路由及账号 API |
+| 真实聊天 UI 与流式 | 首轮两个文件 3 项通过、1 项失败；发送／工具／回复、密钥表单及流式尾部清理通过。搜索用例首次打开页面超时，随后相同用例重跑通过 |
+| Composio broker | 3 个文件，92 项通过 |
+| 源码／路由门禁 | 最终独立重跑两个文件，2 项通过 |
+| 静态检查 | Node 24 typecheck、lint、13 个语言包／6334 条英文源字符串检查、264 个 Electron 模块语法检查通过 |
+| 构建与打包 | server／UI／DuckDB 构建通过；仓库与 node_modules 外的启动、13 个代理入口、MCP、headless CLI、导出 worker、launcher、compile cache 与 enterprise 层发现通过 |
+| 最终运行镜像 | 两端各通过 1700 个制品文件哈希、DuckDB SQL、resvg PNG、1Password SDK 加载与 WASM 校验；本机最终镜像在无网络、临时 HOME、无生产数据挂载下启动通过 |
+
+分批测试包含重跑和重叠，不将它们相加作为一轮完整测试总数。没有运行完整跨平台测试集，也没有发布 Cloudflare Worker。
+账号、Bot、消息、浏览器、VM 和权限写入验证均使用隔离 HOME／数据与模拟提供方；没有发送生产邮箱验证码、生成生产配对码或发起付费模型推理。
+健康与挂载检查不能证明真实供应商账号仍能推理、每个网盘 OAuth 仍有效或全部云功能已配置。
+
+### 两端发布结果
+
+发布标签为 `openmausbot-vm:0.1.127-74485aa66`，运行标签保持 `openmausbot-vm:local`。
+两端 `/app/package.json` 均为 0.1.127，`deployment-manifest.json` 记录同一源码／源码树／上游 SHA 与逐文件哈希。
+基础运行时仍为 `sha256:6474542e76e44ef73280a82dbd61600e5c243905beeb60c896710d3890a790c2`。
+
+| 项目 | 本机 | 50 |
+| --- | --- | --- |
+| 制品源码 | `74485aa665feb15da60e032f150dd0be5bcac3dc` | 同左 |
+| 实际镜像 ID | `sha256:b4c0570f354533207ec6c6ceca5532214b8147f84868a850f6d6ccb44168e618` | `sha256:ddbc5bb8f21dc26ee376b620a4b7a5a92e8a2048d1c00991974ccc8fb32a0924` |
+| Compose | 基础 + VM + Tunnel + mnt + rclone | 基础 + VM + mnt + rclone |
+| HTTP 映射 | `0.0.0.0:8080 → 8799` | `127.0.0.1:8080 → 8799` |
+| 公网入口 | `https://omb.oomdev.de5.net` | `https://ombus.oomdev.de5.net` |
+| 状态 | healthy，RestartCount 0 | healthy，RestartCount 0 |
+
+- 两端 1700 个制品文件的聚合 SHA-256 为 `a60937d557615424fd67ad4482f45f4e8de772c01b4adbac0eba43803ea96227`。
+- 本机 loopback／Tunnel 和 50 loopback／宿主机 Caddy 四个入口的健康及首页检查通过，首页 SHA-256 均为 `ea966c5ccce6d08810e9db703374751eda507427b082d8ce457249dd4d27fc31`。
+- 各自的数据卷、UID/GID 1000:1000、512 MiB shm、端口、专用 VM socket、`/mnt` RW/rslave 和 rclone 配置目录 RW 挂载与本轮操作前一致；VM daemon 29.8.1 可连接，dind 和本机 cloudflared 使用新应用网络命名空间。
+- 两端网盘目录及 rclone 配置可读，配置目录可写。本机现有 rclone 的 `listremotes` 通过；50 仍只挂配置目录，没有安装 rclone 程序。
+- 50 的 Caddy active/enabled，配置哈希为 `4e2a6a7862d352d17b8af4ed96af99faee1f55590bb3323b3e05b02449460a12`，与本轮操作前相同；没有重载 Caddy 或修改 DNS。
+
+50 已通过完整源码 bundle 校验并快进到正式合并提交；被替换的旧应用镜像、源码 bundle、上传归档、验证脚本与临时构建目录均已删除，没有制作用户数据备份。本机保留 `openmausbot-vm:before-sync-0d8eacc65-20261026`。
+
+证据位于被忽略的 `.omb-scratch/upstream-sync-20261026-0d8eacc65/`：两端 before／receipt、冻结源码与提交日志、分批测试与重跑、UI 证据、静态检查、构建／打包／原生模块校验、部署、清理、推送及源码同步日志。
 50 仅保留不含凭据或用户内容的 `.omb-scratch/deployment-receipt.json` 运维回执。
